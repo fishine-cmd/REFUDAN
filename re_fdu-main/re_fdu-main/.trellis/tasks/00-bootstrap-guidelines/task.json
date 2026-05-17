@@ -1,0 +1,35 @@
+{
+  "id": "00-bootstrap-guidelines",
+  "name": "00-bootstrap-guidelines",
+  "title": "Bootstrap Spec Distillation",
+  "description": "Distill the preserved PRD in doc/ into durable Trellis specs and curated task context without overwriting the source docs.",
+  "status": "planning",
+  "dev_type": "docs",
+  "scope": "project-bootstrap",
+  "package": null,
+  "priority": "P0",
+  "creator": "ethan su",
+  "assignee": "ethan su",
+  "createdAt": "2026-05-17",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "doc/README.md",
+    "doc/用户需求PRD_latest.md",
+    ".trellis/spec/backend/",
+    ".trellis/spec/frontend/",
+    ".trellis/spec/guides/"
+  ],
+  "notes": "Bootstrap task created during Trellis init and repurposed as the project-specific PRD/spec distillation task.",
+  "meta": {
+    "source_layer": "doc",
+    "distillation_target": ".trellis/spec"
+  }
+}

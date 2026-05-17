@@ -1,0 +1,112 @@
+openapi: 3.0.0
+info:
+  title: Alumni Referral Interface
+  version: "1.0.0"
+  description: |
+    This API allows an agent to request alumni referral or warm-introduction candidates
+    for internships, jobs, graduate applications, or domain-specific advice.
+
+paths:
+  /agents/campus/api/alumni-referral:
+    post:
+      summary: Search alumni warm-introduction or referral pathways
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                seekerDid:
+                  type: string
+                campus:
+                  type: string
+                targetDomain:
+                  type: string
+                  description: e.g. quant, policy, AI research, consulting, startup
+                requestType:
+                  type: string
+                  enum: [advice, warm-intro, referral, application-feedback]
+                materialsProvided:
+                  type: array
+                  items:
+                    type: string
+                  description: e.g. resume, portfolio, transcript, statement
+                geography:
+                  type: string
+                topK:
+                  type: integer
+                  minimum: 1
+                  maximum: 20
+                  default: 5
+              required:
+                - seekerDid
+                - campus
+                - targetDomain
+                - requestType
+      responses:
+        '200':
+          description: A successful response containing either URLs to AlumniReferralPath JSON-LD files or the JSON-LD data itself.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jsonldUrls:
+                    type: array
+                    items:
+                      type: string
+                      format: uri
+                  jsonldData:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AlumniReferralPath'
+                required:
+                  - jsonldUrls
+components:
+  schemas:
+    AlumniReferralPath:
+      type: object
+      description: JSON-LD formatted alumni referral or warm-introduction path object.
+      properties:
+        "@context":
+          type: object
+          example:
+            "@vocab": "https://schema.org/"
+            "rf": "https://reconnect-fudan.example/ad#"
+        "@type":
+          type: string
+          example: "AlumniReferralPath"
+        "@id":
+          type: string
+          format: uri
+        identifier:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        alumniDid:
+          type: string
+        organization:
+          type: string
+        role:
+          type: string
+        referralMode:
+          type: string
+          enum: [message-review, warm-intro, resume-forward, office-hour]
+        prerequisites:
+          type: array
+          items:
+            type: string
+        humanAuthorizationRequired:
+          type: boolean
+          example: true
+      required:
+        - "@context"
+        - "@type"
+        - "@id"
+        - identifier
+        - name
+        - description
+        - referralMode

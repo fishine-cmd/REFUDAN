@@ -1,0 +1,17 @@
+{
+  "name": "re-fudan",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:site": "bun --cwd apps/site run dev",
+    "dev:app": "bun --cwd apps/app run dev",
+    "build:site": "bun --cwd apps/site run build",
+    "build:app": "bun --cwd apps/app run build",
+    "typecheck:site": "bun --cwd apps/site run typecheck",
+    "typecheck:app": "bun --cwd apps/app run typecheck",
+    "typecheck:contracts": "bun --cwd packages/contracts run typecheck"
+  }
+}

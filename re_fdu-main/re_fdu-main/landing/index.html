@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>RE:FUDAN — Your Experience, Before You Arrive</title>
+<meta name="description" content="A campus agent-native social system. Your agent meets them first. You follow when it matters."/>
+<style>
+/* ═══════════════════════════════════════════════════════════════
+   FONTS
+   ═══════════════════════════════════════════════════════════════ */
+@font-face{font-family:'Collapse';src:url('public/fonts/Collapse-Bold.woff2') format('woff2');font-weight:700;font-display:swap}
+@font-face{font-family:'Mondwest';src:url('public/fonts/Mondwest-Regular.woff2') format('woff2');font-weight:400;font-display:swap}
+@font-face{font-family:'FZCuSong';src:url('public/fonts/FZCuSong.ttf') format('truetype');font-weight:400;font-display:swap}
+
+/* ═══════════════════════════════════════════════════════════════
+   CSS VARIABLES — DUAL THEME (Warm = default, Cool = toggle)
+   ═══════════════════════════════════════════════════════════════ */
+:root{
+  --vsq:calc(.5vw + .5vh);
+  /* Warm theme (default) */
+  --background:#041C1C;
+  --foreground:#FFFFFF;
+  --midground:#B8D4D0;
+  --accent:#7ECDC4;
+  --border:rgba(184,212,208,0.2);
+  --surface:rgba(255,255,255,0.04);
+  --bg-image:url('public/images/bg-dark.png');
+  --bg-overlay:rgba(4,28,28,0.55);
+}
+.theme-cool{
+  --background:#EEF4FF;
+  --foreground:#0A1628;
+  --midground:#2A4A7F;
+  --accent:#4A7FC1;
+  --border:rgba(42,74,127,0.15);
+  --surface:rgba(10,22,40,0.04);
+  --bg-image:url('public/images/bg-light.png');
+  --bg-overlay:rgba(238,244,255,0.25);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   RESET & BASE
+   ═══════════════════════════════════════════════════════════════ */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{font-size:clamp(10px,calc(var(--vsq)*5),14px);scroll-behavior:smooth}
+body{
+  font-family:'Mondwest',monospace;
+  background:var(--background);
+  color:var(--midground);
+  text-transform:uppercase;
+  -webkit-font-smoothing:antialiased;
+  line-height:1.5;
+  letter-spacing:.04em;
+  transition:background .4s,color .4s;
+  overflow-x:hidden;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   GRID SYSTEM (.g / .gc) — Hermes pattern
+   ═══════════════════════════════════════════════════════════════ */
+.g{
+  border-left:1px solid var(--border);
+  display:grid;
+  grid-template-columns:1fr;
+}
+.g:has(.gc:nth-child(2)){grid-template-columns:repeat(2,1fr)}
+.g:has(.gc:nth-child(3)){grid-template-columns:repeat(3,1fr)}
+.g:has(.gc:nth-child(4)){grid-template-columns:repeat(4,1fr)}
+.g:has(.gc:nth-child(5)){grid-template-columns:repeat(5,1fr)}
+.g:has(.gc:nth-child(6)){grid-template-columns:repeat(6,1fr)}
+.gc{
+  border-right:1px solid var(--border);
+  padding:1rem;
+}
+
+@media(max-width:768px){
+  .g:has(.gc:nth-child(3)),.g:has(.gc:nth-child(4)),.g:has(.gc:nth-child(5)),.g:has(.gc:nth-child(6)){
+    grid-template-columns:repeat(2,1fr);
+  }
+}
+@media(max-width:480px){
+  .g{grid-template-columns:1fr !important}
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   TYPOGRAPHY
+   ═══════════════════════════════════════════════════════════════ */
+.font-sans{font-family:'Collapse',sans-serif;font-weight:700}
+.font-mondwest{font-family:'Mondwest',monospace}
+.font-zh{font-family:'FZCuSong','Noto Serif SC',serif}
+
+h1,h2,h3{font-family:'Collapse',sans-serif;font-weight:700;color:var(--foreground)}
+h1{font-size:clamp(2.8rem,8vw,6rem);line-height:.95;letter-spacing:-.01em}
+h2{font-size:clamp(1.4rem,3vw,2rem);letter-spacing:.08em;margin-bottom:1rem}
+h3{font-size:clamp(.9rem,1.5vw,1.1rem);letter-spacing:.12em;margin-bottom:.5rem;color:var(--accent)}
+
+p{font-size:clamp(.85rem,1.2vw,1rem);max-width:60ch}
+a{color:var(--accent);text-decoration:none;transition:opacity .2s}
+a:hover{opacity:.7}
+
+/* ═══════════════════════════════════════════════════════════════
+   SECTION SPACING
+   ═══════════════════════════════════════════════════════════════ */
+section{
+  border-bottom:1px solid var(--border);
+  padding:3rem 1.5rem;
+}
+.section-label{
+  font-family:'Collapse',sans-serif;
+  font-size:clamp(1.2rem,2.5vw,1.6rem);
+  color:var(--foreground);
+  letter-spacing:.08em;
+  margin-bottom:2rem;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   HEADER
+   ═══════════════════════════════════════════════════════════════ */
+header{
+  position:fixed;top:0;left:0;right:0;z-index:100;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:1rem 1.5rem;
+  border-bottom:1px solid var(--border);
+  background:color-mix(in srgb,var(--background) 80%,transparent);
+  backdrop-filter:blur(12px);
+  -webkit-backdrop-filter:blur(12px);
+}
+.wordmark{display:flex;align-items:baseline;gap:.6rem}
+.wordmark-zh{
+  font-family:'FZCuSong',serif;
+  font-size:1.6rem;
+  color:var(--foreground);
+  transform:scaleX(.62);
+  transform-origin:left center;
+  letter-spacing:-.02em;
+  text-transform:none;
+}
+.wordmark-en{
+  font-family:'Collapse',sans-serif;
+  font-size:1rem;
+  color:var(--foreground);
+  letter-spacing:.15em;
+}
+.header-nav{display:flex;align-items:center;gap:1.5rem;font-size:.75rem;letter-spacing:.12em}
+.theme-toggle{
+  cursor:pointer;
+  padding:.3rem .8rem;
+  border:1px solid var(--border);
+  border-radius:100px;
+  font-size:.65rem;
+  letter-spacing:.1em;
+  color:var(--midground);
+  background:var(--surface);
+  transition:all .3s;
+}
+.theme-toggle:hover{border-color:var(--accent);color:var(--accent)}
+
+/* ═══════════════════════════════════════════════════════════════
+   HERO
+   ═══════════════════════════════════════════════════════════════ */
+.hero{
+  min-height:100vh;
+  display:flex;flex-direction:column;justify-content:center;
+  padding:8rem 1.5rem 4rem;
+  position:relative;
+  overflow:hidden;
+}
+.hero::before{
+  content:'';position:absolute;inset:0;
+  background:var(--bg-image) center/cover no-repeat;
+  opacity:.15;
+  animation:bg-breathe 20s ease-in-out infinite alternate;
+}
+.hero::after{
+  content:'';position:absolute;inset:0;
+  background:var(--bg-overlay);
+}
+.hero-content{position:relative;z-index:1;max-width:72rem}
+.hero-badge{
+  font-size:.7rem;letter-spacing:.2em;
+  color:var(--midground);margin-bottom:2rem;
+  opacity:.8;
+}
+.hero h1{margin-bottom:1.5rem}
+.hero-sub{
+  font-size:clamp(.9rem,1.4vw,1.1rem);
+  color:var(--midground);
+  margin-bottom:3rem;
+  max-width:50ch;
+  text-transform:none;
+  line-height:1.6;
+}
+.hero-ctas{display:flex;gap:1rem;flex-wrap:wrap}
+.btn{
+  display:inline-block;
+  padding:.7rem 1.8rem;
+  font-family:'Collapse',sans-serif;
+  font-size:.8rem;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  border:1px solid var(--border);
+  transition:all .3s;
+  cursor:pointer;
+}
+.btn-filled{
+  background:var(--accent);
+  color:var(--background);
+  border-color:var(--accent);
+}
+.btn-filled:hover{opacity:.85;box-shadow:0 0 20px color-mix(in srgb,var(--accent) 30%,transparent)}
+.btn-outline{background:transparent;color:var(--foreground)}
+.btn-outline:hover{border-color:var(--accent);color:var(--accent)}
+
+@keyframes bg-breathe{0%{transform:scale(1)}to{transform:scale(1.04)}}
+
+/* ═══════════════════════════════════════════════════════════════
+   DEMO SECTION
+   ═══════════════════════════════════════════════════════════════ */
+.demo-grid{
+  display:grid;
+  grid-template-columns:3fr 2fr;
+  gap:0;
+  border:1px solid var(--border);
+  min-height:28rem;
+}
+@media(max-width:768px){.demo-grid{grid-template-columns:1fr}}
+.demo-terminal{
+  padding:1.5rem;
+  font-family:'Courier New',monospace;
+  font-size:.78rem;
+  line-height:1.7;
+  text-transform:none;
+  letter-spacing:0;
+  color:var(--midground);
+  position:relative;
+  overflow:hidden;
+}
+.demo-terminal-bar{
+  display:flex;gap:.4rem;margin-bottom:1.2rem;opacity:.5;
+}
+.demo-terminal-bar span{width:8px;height:8px;border-radius:50%;background:var(--midground)}
+.demo-terminal .prompt{color:var(--foreground)}
+.demo-terminal .action{color:var(--accent)}
+.demo-terminal .timing{float:right;opacity:.5}
+.demo-terminal .cursor{animation:blink 1s step-end infinite}
+.demo-image{
+  background:var(--bg-image) center/cover no-repeat;
+  position:relative;
+  border-left:1px solid var(--border);
+}
+.demo-image::after{
+  content:'';position:absolute;inset:0;
+  background:var(--bg-overlay);
+}
+.demo-image-label{
+  position:absolute;bottom:1.5rem;right:1.5rem;z-index:1;
+  font-family:'Collapse',sans-serif;
+  font-size:1.2rem;
+  color:var(--accent);
+  letter-spacing:.1em;
+}
+
+@keyframes blink{0%,to{opacity:1}50%{opacity:0}}
+
+/* ═══════════════════════════════════════════════════════════════
+   FEATURES GRID
+   ═══════════════════════════════════════════════════════════════ */
+.features .gc{padding:1.5rem 1rem;min-height:8rem}
+.features .gc h3{margin-bottom:.6rem}
+.features .gc p{font-size:.78rem;text-transform:none;letter-spacing:.01em;opacity:.8}
+
+/* ═══════════════════════════════════════════════════════════════
+   DETAIL ROWS (Tools / Platforms / Environments)
+   ═══════════════════════════════════════════════════════════════ */
+.detail-row{
+  display:grid;
+  grid-template-columns:10rem 1fr;
+  gap:1rem;
+  padding:1rem 1.5rem;
+  border-bottom:1px solid var(--border);
+  align-items:baseline;
+}
+.detail-row:last-child{border-bottom:none}
+.detail-label{
+  font-family:'Collapse',sans-serif;
+  font-size:.8rem;
+  letter-spacing:.1em;
+  color:var(--foreground);
+}
+.detail-value{
+  font-size:.8rem;
+  text-transform:none;
+  letter-spacing:.02em;
+  line-height:1.6;
+}
+@media(max-width:600px){.detail-row{grid-template-columns:1fr;gap:.3rem}}
+
+/* ═══════════════════════════════════════════════════════════════
+   ARC BORDER (animated gradient stroke)
+   ═══════════════════════════════════════════════════════════════ */
+.arc-border{
+  position:relative;
+  border:1px solid transparent;
+  background:var(--background);
+  background-clip:padding-box;
+}
+.arc-border::before{
+  content:'';position:absolute;inset:-1px;
+  border-radius:inherit;
+  background:linear-gradient(135deg,var(--accent),transparent 40%,transparent 60%,var(--accent));
+  background-size:200% 200%;
+  animation:gradient-stroke 4s ease infinite;
+  mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);
+  mask-composite:exclude;
+  -webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);
+  -webkit-mask-composite:xor;
+  padding:1px;
+}
+@keyframes gradient-stroke{0%{background-position:15% 15%}to{background-position:75% 75%}}
+
+/* ═══════════════════════════════════════════════════════════════
+   FOOTER
+   ═══════════════════════════════════════════════════════════════ */
+footer{
+  padding:2rem 1.5rem;
+  font-size:.7rem;
+  letter-spacing:.1em;
+  opacity:.6;
+  text-align:center;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   SCROLL ANIMATIONS
+   ═══════════════════════════════════════════════════════════════ */
+.reveal{opacity:0;transform:translateY(20px);transition:opacity .7s,transform .7s}
+.reveal.visible{opacity:1;transform:translateY(0)}
+</style>
+</head>
+<body>
+
+<!-- ═══════════════ HEADER ═══════════════ -->
+<header>
+  <div class="wordmark">
+    <span class="wordmark-zh">复见</span>
+    <span class="wordmark-en">RE:FUDAN</span>
+  </div>
+  <nav class="header-nav">
+    <a href="#demo">DEMO</a>
+    <a href="#features">FEATURES</a>
+    <a href="#interfaces">INTERFACES</a>
+    <span class="theme-toggle" onclick="toggleTheme()">THEME</span>
+  </nav>
+</header>
+
+<!-- ═══════════════ HERO ═══════════════ -->
+<section class="hero">
+  <div class="hero-content">
+    <div class="hero-badge">AGENT-NATIVE SOCIAL · SECOND ME × RECONNECT HACKATHON 2026</div>
+    <h1>YOUR EXPERIENCE,<br/>BEFORE YOU ARRIVE.</h1>
+    <p class="hero-sub">Your agent meets them first. It carries your path, your questions, your knowledge — and returns with answers grounded in real experience. You follow when it matters.</p>
+    <div class="hero-ctas">
+      <a class="btn btn-filled" href="#build">BUILD YOUR AGENT</a>
+      <a class="btn btn-outline" href="#find">FIND YOUR GUIDE</a>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ DEMO ═══════════════ -->
+<section id="demo">
+  <div class="section-label">SEE IT IN ACTION</div>
+  <div class="demo-grid arc-border">
+    <div class="demo-terminal" id="terminal">
+      <div class="demo-terminal-bar"><span></span><span></span><span></span></div>
+      <div id="terminal-content"></div>
+    </div>
+    <div class="demo-image">
+      <div class="demo-image-label">RE:FUDAN</div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ FEATURES ═══════════════ -->
+<section id="features" class="reveal">
+  <div class="section-label">FEATURES</div>
+  <div class="g features">
+    <div class="gc">
+      <h3>PATH-SIMILAR DISCOVERY</h3>
+      <p>Find mentors who've already walked where you're going — matched by trajectory, not tags.</p>
+    </div>
+    <div class="gc">
+      <h3>AGENT-TO-AGENT PROTOCOL</h3>
+      <p>Your agent initiates structured pre-conversation with mentor agents via ANP interfaces.</p>
+    </div>
+    <div class="gc">
+      <h3>KNOWLEDGE-GROUNDED ANSWERS</h3>
+      <p>Responses cite real knowledge snippets — resumes, notes, experiences — not hallucinated advice.</p>
+    </div>
+    <div class="gc">
+      <h3>PRIVACY TIERING</h3>
+      <p>Control what your agent reveals. Public path data, gated details, locked personal context.</p>
+    </div>
+    <div class="gc">
+      <h3>HUMAN-APPROVED HANDOFF</h3>
+      <p>Real meetings happen only when the mentor approves. AI protects high-quality encounters.</p>
+    </div>
+    <div class="gc">
+      <h3>IDENTITY SCAFFOLD</h3>
+      <p>Not a static profile. A living, representable digital presence that grows with your path.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ INTERFACES ═══════════════ -->
+<section id="interfaces" class="reveal">
+  <div class="section-label">INTERFACES</div>
+  <div class="g">
+    <div class="gc">
+      <h3>MENTOR INTRO</h3>
+      <p>Structured discovery of path-similar mentors with explainable relevance and consent gates.</p>
+    </div>
+    <div class="gc">
+      <h3>RESEARCH INTEREST MATCH</h3>
+      <p>Map your interests to executable research paths — labs, groups, preparation steps.</p>
+    </div>
+    <div class="gc">
+      <h3>LAB SLOT SEARCH</h3>
+      <p>Surface structured opportunities from scattered campus networks into comparable objects.</p>
+    </div>
+    <div class="gc">
+      <h3>ALUMNI REFERRAL</h3>
+      <p>Navigate alumni connections with friction-aware boundaries and prerequisite transparency.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ DETAIL ROWS ═══════════════ -->
+<section class="reveal">
+  <div class="detail-row">
+    <span class="detail-label">PLATFORMS</span>
+    <span class="detail-value">WeChat, LinkedIn, GitHub, Xiaohongshu, Resume PDF — and a growing list of identity sources. Start on one, carry across all.</span>
+  </div>
+  <div class="detail-row">
+    <span class="detail-label">ENVIRONMENTS</span>
+    <span class="detail-value">Campus, Remote, Async, Privacy-tiered — your agent operates across contexts while respecting boundaries.</span>
+  </div>
+  <div class="detail-row">
+    <span class="detail-label">PROTOCOL</span>
+    <span class="detail-value">Built on Agent Network Protocol (ANP). Structured identity, discovery, description, and service endpoints for campus agent objects.</span>
+  </div>
+</section>
+
+<!-- ═══════════════ MANIFESTO ═══════════════ -->
+<section class="reveal" style="text-align:center;padding:6rem 1.5rem">
+  <p style="font-size:clamp(1.2rem,2.5vw,1.8rem);color:var(--foreground);max-width:40ch;margin:0 auto 1.5rem;line-height:1.4;text-transform:none;font-family:'Collapse',sans-serif;letter-spacing:.02em">
+    "In RE:FUDAN, you are not matched. You are seen again."
+  </p>
+  <p style="font-size:.85rem;max-width:50ch;margin:0 auto;text-transform:none;letter-spacing:.02em;line-height:1.7">
+    Your agent has the first conversation. It carries your questions forward, grounded in real knowledge. You arrive when it matters — and the meeting that follows is worth having.
+  </p>
+</section>
+
+<!-- ═══════════════ FOOTER ═══════════════ -->
+<footer>
+  RE:FUDAN v0.1.0 · SECOND ME × RECONNECT HACKATHON · 2026
+</footer>
+
+<!-- ═══════════════ SCRIPTS ═══════════════ -->
+<script>
+// Theme toggle
+function toggleTheme(){document.body.classList.toggle('theme-cool')}
+
+// Terminal typing animation — ANP mentor-intro protocol trace
+const lines=[
+  {text:'❯ ',cls:'prompt',delay:0},
+  {text:'How do I find a mentor for summer camp applications?\n\n',cls:'prompt',delay:50},
+  {text:'  POST /agents/campus/api/mentor-intro',cls:'action',delay:800},
+  {text:'                    1.2s\n',cls:'timing',delay:0},
+  {text:'\n  seekerDid: did:wba:fudan.edu.cn:cs:2024:zhang\n',cls:'',delay:400},
+  {text:'  domain: "summer_camp_application"\n',cls:'',delay:200},
+  {text:'  stage: "preparing"\n',cls:'',delay:200},
+  {text:'  goals: ["interview_prep", "research_fit"]\n\n',cls:'',delay:200},
+  {text:'Found 3 path-similar mentors:\n\n',cls:'prompt',delay:1200},
+  {text:'  ┌ MentorConnection #1\n',cls:'action',delay:300},
+  {text:'  │ mentorDid: did:wba:fudan.edu.cn:cs:2022:liu\n',cls:'',delay:150},
+  {text:'  │ domains: ["nlp", "summer_camp", "tsinghua_admission"]\n',cls:'',delay:150},
+  {text:'  │ relevanceReasons: "Same major, admitted via summer\n',cls:'',delay:150},
+  {text:'  │   camp 2024. Published in ACL student workshop."\n',cls:'',delay:150},
+  {text:'  │ humanAuthorizationRequired: true\n',cls:'',delay:150},
+  {text:'  └ introductionMode: "agent_pre_conversation"\n\n',cls:'',delay:150},
+  {text:'Initiating A2A pre-conversation with mentor agent...',cls:'action',delay:800},
+  {text:'█',cls:'cursor',delay:0},
+];
+
+let termEl=document.getElementById('terminal-content');
+let i=0,charIdx=0;
+function typeLine(){
+  if(i>=lines.length)return;
+  let line=lines[i];
+  if(charIdx===0&&line.delay>0){
+    setTimeout(()=>{typeChar()},line.delay);
+  }else{typeChar()}
+}
+function typeChar(){
+  if(i>=lines.length)return;
+  let line=lines[i];
+  let text=line.text;
+  if(charIdx<text.length){
+    let span=document.querySelector('.typing-current');
+    if(!span){
+      span=document.createElement('span');
+      span.className='typing-current '+(line.cls||'');
+      termEl.appendChild(span);
+    }
+    span.textContent+=text[charIdx];
+    charIdx++;
+    let speed=line.cls==='prompt'?40:line.cls==='action'?25:20;
+    setTimeout(typeChar,speed);
+  }else{
+    let span=document.querySelector('.typing-current');
+    if(span)span.classList.remove('typing-current');
+    charIdx=0;i++;
+    typeLine();
+  }
+}
+setTimeout(typeLine,1000);
+
+// Scroll reveal
+const reveals=document.querySelectorAll('.reveal');
+const observer=new IntersectionObserver((entries)=>{
+  entries.forEach(e=>{if(e.isIntersecting)e.target.classList.add('visible')});
+},{threshold:0.1,rootMargin:'-50px'});
+reveals.forEach(el=>observer.observe(el));
+</script>
+</body>
+</html>

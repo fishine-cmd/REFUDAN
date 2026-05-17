@@ -1,0 +1,135 @@
+openapi: 3.0.0
+info:
+  title: Mentor Introduction Interface
+  version: "1.0.0"
+  description: |
+    This API allows an agent to request mentor or senior-student introduction candidates
+    for a student based on domain, stage, goals, and constraints.
+    The response can either contain URLs to JSON-LD files or the JSON-LD data directly.
+
+paths:
+  /agents/campus/api/mentor-intro:
+    post:
+      summary: Search mentor / peer-guide introduction candidates
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                seekerDid:
+                  type: string
+                  description: DID of the student or student-agent requesting guidance
+                campus:
+                  type: string
+                  description: Campus or university scope, e.g. Fudan University
+                domain:
+                  type: string
+                  description: Main area of interest, e.g. AI, economics, law, neuroscience
+                stage:
+                  type: string
+                  enum: [freshman, sophomore, junior, senior, master, phd, alumni]
+                  description: Current stage of the seeker
+                goals:
+                  type: array
+                  items:
+                    type: string
+                  description: Main guidance goals such as research, internship, exchange, graduate-school, entrepreneurship
+                constraints:
+                  type: array
+                  items:
+                    type: string
+                  description: Constraints or preferences, e.g. language, time budget, prior coursework
+                topK:
+                  type: integer
+                  minimum: 1
+                  maximum: 20
+                  default: 5
+                  description: Number of candidates requested
+              required:
+                - seekerDid
+                - campus
+                - domain
+                - stage
+                - goals
+      responses:
+        '200':
+          description: A successful response containing either URLs to MentorConnection JSON-LD files or the JSON-LD data itself.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jsonldUrls:
+                    type: array
+                    description: URLs to JSON-LD files containing MentorConnection data
+                    items:
+                      type: string
+                      format: uri
+                  jsonldData:
+                    type: array
+                    description: JSON-LD formatted mentor-connection data
+                    items:
+                      $ref: '#/components/schemas/MentorConnection'
+                required:
+                  - jsonldUrls
+components:
+  schemas:
+    MentorConnection:
+      type: object
+      description: JSON-LD formatted introduction candidate object for a campus mentor or senior peer.
+      properties:
+        "@context":
+          type: object
+          example:
+            "@vocab": "https://schema.org/"
+            "rf": "https://reconnect-fudan.example/ad#"
+        "@type":
+          type: string
+          example: "MentorConnection"
+        "@id":
+          type: string
+          format: uri
+          example: "https://reconnect-fudan.example/objects/mentor-connection/mc-001.json"
+        identifier:
+          type: string
+          example: "mentor-connection-001"
+        name:
+          type: string
+          example: "AI Research Senior Introduction"
+        description:
+          type: string
+          example: "A senior student suitable for guiding a sophomore interested in AI research and summer lab pathways."
+        mentorDid:
+          type: string
+          example: "did:wba:fudan.example:student:senior-ai-001"
+        mentorRole:
+          type: string
+          example: "Senior Undergraduate"
+        domains:
+          type: array
+          items:
+            type: string
+        relevanceReasons:
+          type: array
+          items:
+            type: string
+        introductionMode:
+          type: string
+          enum: [direct-message, warm-intro-request, office-hour, async-qa]
+        humanAuthorizationRequired:
+          type: boolean
+          example: true
+        availabilityNote:
+          type: string
+          example: "Accepts up to 2 intro requests per week for AI research questions."
+      required:
+        - "@context"
+        - "@type"
+        - "@id"
+        - identifier
+        - name
+        - description
+        - mentorDid
+        - introductionMode

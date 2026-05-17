@@ -1,0 +1,11 @@
+# Binaries & installers
+*.msi
+*.exe
+*.zip
+*.lnk
+
+# Unrelated projects
+apps/
+re_fdu_new/
+fig/
+新建文件夹/

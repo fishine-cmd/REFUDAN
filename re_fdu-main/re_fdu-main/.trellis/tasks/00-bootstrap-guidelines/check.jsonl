@@ -1,0 +1,9 @@
+{"file":"doc/README.md","reason":"Verify source/archive policy remains intact"}
+{"file":"doc/用户需求PRD_latest.md","reason":"Check distilled rules against original product intent"}
+{"file":".trellis/spec/guides/re-fudan-product-brief.md","reason":"Review product-scope alignment for future tasks"}
+{"file":".trellis/spec/guides/source-documents-and-distillation.md","reason":"Review source-vs-spec-vs-task layering rules"}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Frontend review bar for demo clarity and privacy states"}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Shared contract and validation expectations"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Backend review bar for privacy, explainability, and handoff"}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"Check logging stays privacy-safe"}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Check failure modes stay typed and safe"}

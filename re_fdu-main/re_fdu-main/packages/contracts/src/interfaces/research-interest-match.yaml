@@ -1,0 +1,124 @@
+openapi: 3.0.0
+info:
+  title: Research Interest Match Interface
+  version: "1.0.0"
+  description: |
+    This API allows an agent to request research-path or lab-interest matches for a student.
+    The response can either contain URLs to JSON-LD files or the JSON-LD data directly.
+
+paths:
+  /agents/campus/api/research-interest-match:
+    post:
+      summary: Match a student to research directions, labs, and near-path exemplars
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                seekerDid:
+                  type: string
+                  description: DID of the requesting student or student-agent
+                campus:
+                  type: string
+                interests:
+                  type: array
+                  items:
+                    type: string
+                  description: Declared interests such as LLMs, political theory, neuroscience, causal inference
+                background:
+                  type: array
+                  items:
+                    type: string
+                  description: Prior coursework, skills, projects, or experience
+                targetStage:
+                  type: string
+                  enum: [course-exploration, lab-entry, summer-research, thesis, grad-school]
+                constraints:
+                  type: array
+                  items:
+                    type: string
+                topK:
+                  type: integer
+                  minimum: 1
+                  maximum: 20
+                  default: 5
+              required:
+                - seekerDid
+                - campus
+                - interests
+                - targetStage
+      responses:
+        '200':
+          description: A successful response containing either URLs to ResearchPathOption JSON-LD files or the JSON-LD data itself.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jsonldUrls:
+                    type: array
+                    items:
+                      type: string
+                      format: uri
+                  jsonldData:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ResearchPathOption'
+                required:
+                  - jsonldUrls
+components:
+  schemas:
+    ResearchPathOption:
+      type: object
+      description: JSON-LD formatted research path recommendation object.
+      properties:
+        "@context":
+          type: object
+          example:
+            "@vocab": "https://schema.org/"
+            "rf": "https://reconnect-fudan.example/ad#"
+        "@type":
+          type: string
+          example: "ResearchPathOption"
+        "@id":
+          type: string
+          format: uri
+        identifier:
+          type: string
+        name:
+          type: string
+          example: "LLM Systems Research Path"
+        description:
+          type: string
+        pathStage:
+          type: string
+          example: "lab-entry"
+        recommendedLabOrGroup:
+          type: string
+          example: "Fudan NLP Systems Lab"
+        relatedPeople:
+          type: array
+          items:
+            type: string
+        requiredPreparation:
+          type: array
+          items:
+            type: string
+        fitSignals:
+          type: array
+          items:
+            type: string
+        nextActions:
+          type: array
+          items:
+            type: string
+      required:
+        - "@context"
+        - "@type"
+        - "@id"
+        - identifier
+        - name
+        - description
+        - pathStage

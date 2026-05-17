@@ -1,0 +1,13 @@
+{"file":"doc/README.md","reason":"Preserved source/archive policy for original docs"}
+{"file":"doc/用户需求PRD_latest.md","reason":"Primary source PRD for product scope and demo flow"}
+{"file":".trellis/spec/guides/re-fudan-product-brief.md","reason":"Durable product framing for P0-P4 and non-goals"}
+{"file":".trellis/spec/guides/source-documents-and-distillation.md","reason":"Rules for converting source docs into Trellis artifacts"}
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend defaults for first implementation tasks"}
+{"file":".trellis/spec/frontend/directory-structure.md","reason":"Target UI structure by feature flow"}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Product-specific UI behavior and explanation surfaces"}
+{"file":".trellis/spec/frontend/state-management.md","reason":"State defaults for onboarding, matching, dialogue, and referral"}
+{"file":".trellis/spec/backend/index.md","reason":"Backend defaults for profile, matching, A2A, and handoff"}
+{"file":".trellis/spec/backend/directory-structure.md","reason":"Target server structure for feature slices and adapters"}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"Persistence defaults and privacy-sensitive data modeling"}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Typed error behavior for privacy and handoff boundaries"}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"Safe logging expectations for student and agent data"}

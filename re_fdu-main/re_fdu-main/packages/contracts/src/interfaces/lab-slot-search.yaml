@@ -1,0 +1,113 @@
+openapi: 3.0.0
+info:
+  title: Lab Slot Search Interface
+  version: "1.0.0"
+  description: |
+    This API allows an agent to search for current or upcoming lab opportunities,
+    informal openings, or project seats relevant to a student's goals.
+
+paths:
+  /agents/campus/api/lab-slot-search:
+    post:
+      summary: Search available lab or project opportunities
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                seekerDid:
+                  type: string
+                campus:
+                  type: string
+                domains:
+                  type: array
+                  items:
+                    type: string
+                preferredMode:
+                  type: array
+                  items:
+                    type: string
+                  description: e.g. reading-group, ra, engineering-project, policy-research
+                timeBudget:
+                  type: string
+                  description: e.g. 8h/week
+                targetTerm:
+                  type: string
+                  description: e.g. 2026-summer or 2026-fall
+                topK:
+                  type: integer
+                  minimum: 1
+                  maximum: 20
+                  default: 5
+              required:
+                - seekerDid
+                - campus
+                - domains
+      responses:
+        '200':
+          description: A successful response containing either URLs to LabOpportunity JSON-LD files or the JSON-LD data itself.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jsonldUrls:
+                    type: array
+                    items:
+                      type: string
+                      format: uri
+                  jsonldData:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/LabOpportunity'
+                required:
+                  - jsonldUrls
+components:
+  schemas:
+    LabOpportunity:
+      type: object
+      description: JSON-LD formatted lab or project opportunity object.
+      properties:
+        "@context":
+          type: object
+          example:
+            "@vocab": "https://schema.org/"
+            "rf": "https://reconnect-fudan.example/ad#"
+        "@type":
+          type: string
+          example: "LabOpportunity"
+        "@id":
+          type: string
+          format: uri
+        identifier:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        hostOrganization:
+          type: string
+        supervisorOrContact:
+          type: string
+        opportunityType:
+          type: string
+          enum: [ra, reading-group, course-project, startup-project, thesis, volunteer-research]
+        requirements:
+          type: array
+          items:
+            type: string
+        applicationWindow:
+          type: string
+        humanAuthorizationRequired:
+          type: boolean
+          example: true
+      required:
+        - "@context"
+        - "@type"
+        - "@id"
+        - identifier
+        - name
+        - description
+        - opportunityType
