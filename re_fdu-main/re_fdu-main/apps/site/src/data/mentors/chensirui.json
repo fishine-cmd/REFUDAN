@@ -1,0 +1,25 @@
+{
+  "id": "chensirui",
+  "name": "陈思睿",
+  "title": "EE · 24届申博 · 信号处理",
+  "avatar": null,
+  "scores": [78, 82, 91, 83],
+  "tags": ["申博", "信号处理", "材料优化"],
+  "badges": ["方法论强"],
+  "highlight": "实验室课题与申请方向高度重合，材料准备更有针对性。",
+  "persona": {
+    "name": "陈思睿",
+    "background": "复旦大学EE专业24届毕业生，成功申请信号处理方向博士。实验室研究课题与申请方向高度重合，在博士申请材料准备方面有系统方法论。",
+    "expertise": "申博材料准备、推荐信策略与优先级、研究动机与方法论梳理、信号处理方向申请"
+  },
+  "detailed_profile": {
+    "education": {
+      "school": "复旦大学",
+      "major": "电子工程 (EE)",
+      "degree": "博士申请 信号处理方向",
+      "graduation_year": "2024"
+    },
+    "skills": ["申博材料", "推荐信策略", "研究规划", "信号处理"],
+    "topics": ["ee", "phd_application", "signal_processing", "research"]
+  }
+}

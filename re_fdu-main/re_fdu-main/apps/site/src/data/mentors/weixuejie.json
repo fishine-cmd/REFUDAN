@@ -1,0 +1,89 @@
+{
+  "id": "weixuejie",
+  "name": "魏学姐",
+  "title": "复旦大三 · 一级买方 · VC/PE · 雅思7.5",
+  "avatar": null,
+  "scores": [88, 85, 92, 90],
+  "tags": ["一级买方", "VC/PE", "雅思", "实习规划"],
+  "badges": ["面试达人", "实习达人", "雅思高分"],
+  "highlight": "从VC到PE的一级市场实战经验，雅思首考7.5，帮你少走弯路。",
+  "persona": {
+    "name": "魏学姐",
+    "background": "复旦大学大三学生，小红书ID「P.L.U.M」，21岁。在一级市场摸爬滚打，经历VC/PE多轮面试，曾在top CVC实习参与deal sourcing和实习生招聘。暑假在外资能源咨询公司做Research。雅思首考7.5分（口语7分），自学仅3周。喜欢旅行摄影，去过华盛顿、迈阿密、纽约、伊斯坦布尔、天津、云南等地。",
+    "expertise": "一级买方面试准备、VC与PE行业认知与区别、雅思备考策略（尤其口语）、实习申请与规划、行研/咨询PTA/四大审计等第一份实习选择、职业规划与转型思考"
+  },
+  "detailed_profile": {
+    "education": {
+      "school": "复旦大学",
+      "grade": "大三",
+      "certifications": ["雅思 IELTS 总分7.5，口语7分，自学3周首考通过"],
+      "note": "关注留学申请，发现很多学校要求雅思总分7.5小分7，部分学校不再接受新版托福成绩"
+    },
+    "career_domains": {
+      "primary_market_buyside": {
+        "label": "一级买方",
+        "experiences": [
+          "Top CVC实习：参与deal sourcing、实习生招聘，收到近70份简历但老板看中的不超过5份",
+          "VC跳PE面试多场：深感VC跳PE有难度，VC跳更高tier VC也不简单",
+          "了解PE和VC投资人核心区别：VC投资人频繁出差聊创业团队，PE更侧重财务分析和deal执行",
+          "MBB+三中一华配置依然投得很艰难，但在top CVC被捞上岸"
+        ]
+      },
+      "energy_consulting": {
+        "label": "能源咨询",
+        "experiences": [
+          "外资能源咨询暑期实习：主要做Research工作，类似专业垂直领域智库",
+          "向能源实体企业与金融机构卖报告",
+          "感悟：撕了金融的伞，发现外面根本没有雨"
+        ]
+      },
+      "internship_strategy": {
+        "label": "实习规划",
+        "experiences": [
+          "第一份实习常见去向：券商研究所行研（二级卖方）、咨询PTA、四大审计",
+          "券商研究所分行业组（汽车/金属/能源/食品饮料/电子等）和总量组（宏观/策略/固收）",
+          "建议第一份实习从行研或PTA开始积累经验",
+          "如何为下一份实习做准备：持续积累行业认知和面试技巧"
+        ]
+      }
+    },
+    "skills": [
+      "一级买方面试准备与自我复盘",
+      "VC/PE行业分析与deal评估",
+      "市场调研与尽职调查",
+      "deal sourcing与networking",
+      "雅思备考策略与结构化复习",
+      "实习申请与sourcing",
+      "职业与学业规划",
+      "英语水平（雅思7.5）",
+      "个人成长反思与mentorship"
+    ],
+    "key_experiences": [
+      {
+        "title": "雅思首考7.5",
+        "detail": "口语7分，自学仅3周。分享口语Part 1题目和备考经验，强调结构化复习方法。"
+      },
+      {
+        "title": "一级买方面试复盘",
+        "detail": "经历VC和PE多轮面试，总结PE和VC投资人核心区别，强调VC更看重对创业者和行业的理解。"
+      },
+      {
+        "title": "一级市场实习一个月",
+        "detail": "在top CVC做deal sourcing和招聘，收70份简历仅5份入眼，很多传统'竞争力'在VC不成立。"
+      },
+      {
+        "title": "能源咨询暑期实习",
+        "detail": "外资能源咨询做Research，体验金融以外的世界，结论是'外面根本没有雨'。"
+      },
+      {
+        "title": "第一份实习指南",
+        "detail": "系统梳理券商行研、咨询PTA、四大审计三条路径的优劣和适用场景。"
+      }
+    ],
+    "writing_style": {
+      "tone": ["教育/mentorship导向", "温暖真诚", "坦率自省"],
+      "format": "结构化标题：[身份]｜[主题]，配图为主，中长文caption"
+    },
+    "topics": ["career", "internship", "exam_prep", "university_life", "study_abroad"]
+  }
+}

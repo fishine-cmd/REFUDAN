@@ -1,0 +1,248 @@
+/**
+ * Hermes Design System — tokens.css
+ * Source: hermes-agent.nousresearch.com reverse research
+ * Light tokens: designer analysis (high confidence)
+ * Dark tokens: DOM/CSS variable extraction (high confidence)
+ *
+ * Usage:
+ *   Import once at project root. Use semantic tokens in components.
+ *   Switch themes via [data-theme="dark"] on <html>.
+ */
+
+/* ─────────────────────────────────────────────────────
+   Primitive tokens (theme-agnostic raw values)
+   ───────────────────────────────────────────────────── */
+:root {
+  /* Brand blue scale */
+  --primitive-brand-700: #0050C8;
+  --primitive-brand-600: #2F73E0;
+  --primitive-brand-500: #6FA0E6;
+  --primitive-brand-300: #9FBDEB;
+  --primitive-brand-200: #CBDCF4;
+  --primitive-brand-100: #DDE8F8;
+  --primitive-brand-050: #EEF3FB;
+
+  /* Paper / neutral */
+  --primitive-paper-000: #FFFFFF;
+  --primitive-paper-050: #F7FAFD;
+  --primitive-paper-100: #F1F5FA;
+  --primitive-paper-200: #E5EBF3;
+
+  /* Ink */
+  --primitive-ink-700: #4E647F;
+  --primitive-ink-500: #7E93B2;
+
+  /* Dark primitives */
+  --primitive-dark-base:    #041C1C;
+  --primitive-dark-mid:     #FFE6CB;
+  --primitive-dark-fg:      #FFFFFF;
+
+  /* Typography */
+  --font-display:            'Mondwest', serif;
+  --font-heading:            'Collapse', sans-serif;
+  --font-heading-compressed: 'Rules Compressed', sans-serif;
+  --font-heading-expanded:   'Rules Expanded', sans-serif;
+  --font-mono:               'Courier Prime', 'Courier New', monospace;
+  --font-body:               'Collapse', system-ui, sans-serif;
+}
+
+/* ─────────────────────────────────────────────────────
+   Light theme
+   ───────────────────────────────────────────────────── */
+[data-theme="light"] {
+  --bg-image: url('/images/bg-light.png');
+  --bg-overlay: rgba(238, 244, 255, 0.25);
+
+  /* — Background — */
+  --color-bg-canvas:        #F7FAFD;
+  --color-bg-surface:       #FFFFFF;
+  --color-bg-surface-muted: #F1F5FA;
+  --color-bg-accent-soft:   #EEF3FB;
+  --color-bg-overlay:       rgba(238, 244, 255, 0.25);
+
+  /* — Text — */
+  --color-text-primary:   #0050C8;
+  --color-text-secondary: #6FA0E6;
+  --color-text-body:      #4E647F;
+  --color-text-muted:     #7E93B2;
+
+  /* — Border — */
+  --color-border-default: #CBDCF4;
+  --color-border-subtle:  #E5EBF3;
+
+  /* — Brand action — */
+  --color-brand:            #0050C8;
+  --color-brand-hover:      #2F73E0;
+  --color-brand-soft:       #DDE8F8;
+  --color-brand-soft-hover: #EEF3FB;
+
+  /* — Focus — */
+  --color-focus-ring: rgba(0, 80, 200, 0.22);
+
+  /* — Global shared — */
+  --color-divider:         #E5EBF3;
+  --color-selection-bg:    #DDE8F8;
+  --color-scrollbar-thumb: #CBDCF4;
+
+  /* ── Header ── */
+  --header-bg:             #F7FAFD;
+  --header-bg-scrolled:    rgba(247, 250, 253, 0.92);
+  --header-border:         #E5EBF3;
+  --header-wordmark:       #0050C8;
+  --header-logo:           #0050C8;
+  --header-nav-link:       #4E647F;
+  --header-nav-link-hover: #0050C8;
+  --header-toggle-bg:      #EEF3FB;
+  --header-toggle-icon:    #0050C8;
+
+  /* ── Hero ── */
+  --hero-bg:                    #F7FAFD;
+  --hero-title:                 #0050C8;
+  --hero-title-accent:          #2F73E0;
+  --hero-subtitle:              #4E647F;
+  --hero-code-bg:               #F1F5FA;
+  --hero-code-text:             #0050C8;
+  --hero-code-border:           #CBDCF4;
+  --hero-cta-primary-bg:        #0050C8;
+  --hero-cta-primary-text:      #FFFFFF;
+  --hero-cta-primary-hover-bg:  #2F73E0;
+  --hero-cta-secondary-bg:      #EEF3FB;
+  --hero-cta-secondary-text:    #0050C8;
+  --hero-cta-secondary-border:  #CBDCF4;
+
+  /* ── Terminal ── */
+  --terminal-bg:           #F1F5FA;
+  --terminal-border:       #CBDCF4;
+  --terminal-header-bg:    #E5EBF3;
+  --terminal-prompt:       #0050C8;
+  --terminal-command:      #2F73E0;
+  --terminal-output:       #4E647F;
+  --terminal-cursor:       #0050C8;
+  --terminal-selection-bg: #DDE8F8;
+  --terminal-title:        #0050C8;
+  --terminal-subtitle:     #7E93B2;
+
+  /* ── Feature cards ── */
+  --feature-section-bg:         #FFFFFF;
+  --feature-card-bg:            #F7FAFD;
+  --feature-card-bg-hover:      #F1F5FA;
+  --feature-card-border:        #E5EBF3;
+  --feature-card-border-hover:  #CBDCF4;
+  --feature-icon-bg:            #EEF3FB;
+  --feature-icon-color:         #0050C8;
+  --feature-title:              #0050C8;
+  --feature-body:               #4E647F;
+  --feature-tag-bg:             #DDE8F8;
+  --feature-tag-text:           #2F73E0;
+
+  /* ── Footer ── */
+  --footer-bg:               #041C1C;
+  --footer-border-top:       rgba(255, 230, 203, 0.12);
+  --footer-text:             rgba(255, 230, 203, 0.75);
+  --footer-text-muted:       rgba(255, 230, 203, 0.45);
+  --footer-link:             #FFE6CB;
+  --footer-link-hover:       #FFFFFF;
+  --footer-badge-bg:         rgba(255, 230, 203, 0.08);
+  --footer-badge-text:       rgba(255, 230, 203, 0.60);
+}
+
+/* ─────────────────────────────────────────────────────
+   Dark theme (default)
+   ───────────────────────────────────────────────────── */
+:root:not([data-theme]),
+[data-theme="dark"] {
+  --bg-image: url('/images/bg-dark.png');
+  --bg-overlay: rgba(4, 28, 28, 0.55);
+
+  /* — Background — */
+  --color-bg-canvas:        #041C1C;
+  --color-bg-surface:       rgba(255, 255, 255, 0.04);
+  --color-bg-surface-muted: rgba(255, 255, 255, 0.07);
+  --color-bg-accent-soft:   rgba(255, 230, 203, 0.08);
+  --color-bg-overlay:       rgba(4, 28, 28, 0.55);
+
+  /* — Text — */
+  --color-text-primary:   #FFFFFF;
+  --color-text-secondary: #FFE6CB;
+  --color-text-body:      rgba(255, 230, 203, 0.75);
+  --color-text-muted:     rgba(255, 230, 203, 0.45);
+
+  /* — Border — */
+  --color-border-default: rgba(255, 230, 203, 0.20);
+  --color-border-subtle:  rgba(255, 230, 203, 0.12);
+
+  /* — Brand action — */
+  --color-brand:            #FFE6CB;
+  --color-brand-hover:      #FFFFFF;
+  --color-brand-soft:       rgba(255, 230, 203, 0.10);
+  --color-brand-soft-hover: rgba(255, 230, 203, 0.15);
+
+  /* — Focus — */
+  --color-focus-ring: rgba(255, 230, 203, 0.35);
+
+  /* — Global shared — */
+  --color-divider:         rgba(255, 230, 203, 0.12);
+  --color-selection-bg:    rgba(255, 230, 203, 0.20);
+  --color-scrollbar-thumb: rgba(255, 230, 203, 0.20);
+
+  /* ── Header ── */
+  --header-bg:             #041C1C;
+  --header-bg-scrolled:    rgba(4, 28, 28, 0.92);
+  --header-border:         rgba(255, 230, 203, 0.15);
+  --header-wordmark:       #FFE6CB;
+  --header-logo:           #FFFFFF;
+  --header-nav-link:       #FFFFFF;
+  --header-nav-link-hover: #FFE6CB;
+  --header-toggle-bg:      rgba(255, 230, 203, 0.10);
+  --header-toggle-icon:    #FFE6CB;
+
+  /* ── Hero ── */
+  --hero-bg:                    #041C1C;
+  --hero-title:                 #FFFFFF;
+  --hero-title-accent:          #FFE6CB;
+  --hero-subtitle:              rgba(255, 230, 203, 0.75);
+  --hero-code-bg:               rgba(255, 255, 255, 0.06);
+  --hero-code-text:             #FFE6CB;
+  --hero-code-border:           rgba(255, 230, 203, 0.20);
+  --hero-cta-primary-bg:        #FFE6CB;
+  --hero-cta-primary-text:      #041C1C;
+  --hero-cta-primary-hover-bg:  #FFFFFF;
+  --hero-cta-secondary-bg:      rgba(255, 230, 203, 0.10);
+  --hero-cta-secondary-text:    #FFE6CB;
+  --hero-cta-secondary-border:  rgba(255, 230, 203, 0.25);
+
+  /* ── Terminal ── */
+  --terminal-bg:           rgba(4, 28, 28, 0.85);
+  --terminal-border:       rgba(255, 230, 203, 0.15);
+  --terminal-header-bg:    rgba(255, 255, 255, 0.05);
+  --terminal-prompt:       #FFE6CB;
+  --terminal-command:      #FFFFFF;
+  --terminal-output:       rgba(255, 230, 203, 0.75);
+  --terminal-cursor:       #FFE6CB;
+  --terminal-selection-bg: rgba(255, 230, 203, 0.20);
+  --terminal-title:        #FFFFFF;
+  --terminal-subtitle:     rgba(255, 230, 203, 0.60);
+
+  /* ── Feature cards ── */
+  --feature-section-bg:         #041C1C;
+  --feature-card-bg:            rgba(255, 255, 255, 0.04);
+  --feature-card-bg-hover:      rgba(255, 255, 255, 0.07);
+  --feature-card-border:        rgba(255, 230, 203, 0.12);
+  --feature-card-border-hover:  rgba(255, 230, 203, 0.25);
+  --feature-icon-bg:            rgba(255, 230, 203, 0.08);
+  --feature-icon-color:         #FFE6CB;
+  --feature-title:              #FFFFFF;
+  --feature-body:               rgba(255, 230, 203, 0.75);
+  --feature-tag-bg:             rgba(255, 230, 203, 0.10);
+  --feature-tag-text:           #FFE6CB;
+
+  /* ── Footer ── */
+  --footer-bg:               #041C1C;
+  --footer-border-top:       rgba(255, 230, 203, 0.12);
+  --footer-text:             rgba(255, 230, 203, 0.75);
+  --footer-text-muted:       rgba(255, 230, 203, 0.45);
+  --footer-link:             #FFE6CB;
+  --footer-link-hover:       #FFFFFF;
+  --footer-badge-bg:         rgba(255, 230, 203, 0.08);
+  --footer-badge-text:       rgba(255, 230, 203, 0.60);
+}

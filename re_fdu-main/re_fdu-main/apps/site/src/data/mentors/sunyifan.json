@@ -1,0 +1,24 @@
+{
+  "id": "sunyifan",
+  "name": "孙逸凡",
+  "title": "Bio · 22届夏令营 · 交叉方向",
+  "avatar": null,
+  "scores": [86, 79, 84, 88],
+  "tags": ["交叉", "夏令营", "面试题型"],
+  "badges": ["细节到位"],
+  "highlight": "曾走过同一夏令营链路，面试题型与资料储备一致。",
+  "persona": {
+    "name": "孙逸凡",
+    "background": "复旦大学生物专业22届毕业生，通过夏令营进入交叉学科方向。完整走过夏令营申请和面试全流程，对面试题型和资料准备有详细经验。",
+    "expertise": "夏令营全流程准备、交叉学科申请策略、面试题型分析、资料储备建议"
+  },
+  "detailed_profile": {
+    "education": {
+      "school": "复旦大学",
+      "major": "生物 (Bio)",
+      "graduation_year": "2022"
+    },
+    "skills": ["夏令营申请", "交叉学科", "面试准备", "资料整理"],
+    "topics": ["bio", "summer_camp", "interdisciplinary", "interview"]
+  }
+}

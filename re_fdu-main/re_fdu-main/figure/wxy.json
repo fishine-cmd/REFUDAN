@@ -1,0 +1,217 @@
+{
+  "basic_info": {
+    "display_name": "P.L.U.M",
+    "platforms": [
+      "xiaohongshu"
+    ],
+    "bio": "苦命打工人 21岁 复旦大学",
+    "xhs_id": "193190562",
+    "profile_url": "https://www.xiaohongshu.com/user/profile/5d312bf2000000001200cecf?xsec_token=ABADrMymYK6Y9verN9G5N6ahZEBRjqfWPmJXn_BtgYukI%3D&xsec_source=pc_search"
+  },
+  "content_topics": [
+    {
+      "topic": "travel & city exploration",
+      "post_count": 12,
+      "confidence": 0.9,
+      "evidence": [
+        "Cherry Blossom｜Washington DC P.L.U.M 4",
+        "迈阿密的日出与晚霞 P.L.U.M 5",
+        "纽约天际线🏙️ P.L.U.M 3",
+        "伊斯坦布尔转机一日游 P.L.U.M 1",
+        "天津出片日记 P.L.U.M 2"
+      ]
+    },
+    {
+      "topic": "university life",
+      "post_count": 8,
+      "confidence": 0.95,
+      "evidence": [
+        "复旦大三｜4.11雅思出分&备考经验分享 P.L.U.M 99",
+        "复旦大三｜一级买方面试复盘 P.L.U.M 731",
+        "复旦大三｜在一级摸爬滚打一个月，我学到了啥 P.L.U.M 295",
+        "复旦大二｜叛逃金融圈，误入能源咨询的一夏🌍 P.L.U.M 413",
+        "复旦大二｜我的成长轨迹 P.L.U.M 71",
+        "复旦大二｜如何找第一份实习 P.L.U.M 1537",
+        "复旦大二｜如何为下一份实习做准备 P.L.U.M 338",
+        "复旦大二｜找实习做规划，少走弯路 P.L.U.M 696"
+      ]
+    },
+    {
+      "topic": "career reflection",
+      "post_count": 7,
+      "confidence": 0.8800000000000001,
+      "evidence": [
+        "复旦大三｜4.11雅思出分&备考经验分享 P.L.U.M 99",
+        "复旦大三｜在一级摸爬滚打一个月，我学到了啥 P.L.U.M 295",
+        "复旦大二｜叛逃金融圈，误入能源咨询的一夏🌍 P.L.U.M 413",
+        "复旦大二｜我的成长轨迹 P.L.U.M 71",
+        "复旦大二｜如何为下一份实习做准备 P.L.U.M 338",
+        "复旦大三｜一级买方面试复盘 P.L.U.M 731",
+        "复旦大二｜找实习做规划，少走弯路 P.L.U.M 696"
+      ]
+    },
+    {
+      "topic": "internship & career prep",
+      "post_count": 7,
+      "confidence": 0.8600000000000002,
+      "evidence": [
+        "复旦大三｜一级买方面试复盘 P.L.U.M 731",
+        "复旦大二｜叛逃金融圈，误入能源咨询的一夏🌍 P.L.U.M 413",
+        "复旦大二｜如何找第一份实习 P.L.U.M 1537",
+        "复旦大二｜如何为下一份实习做准备 P.L.U.M 338",
+        "复旦大二｜找实习做规划，少走弯路 P.L.U.M 696",
+        "复旦大三｜在一级摸爬滚打一个月，我学到了啥 P.L.U.M 295",
+        "复旦大二｜我的成长轨迹 P.L.U.M 71"
+      ]
+    },
+    {
+      "topic": "exam & test prep",
+      "post_count": 3,
+      "confidence": 0.54,
+      "evidence": [
+        "复旦大三｜4.11雅思出分&备考经验分享 P.L.U.M 99",
+        "复旦大二｜我的成长轨迹 P.L.U.M 71",
+        "复旦大二｜找实习做规划，少走弯路 P.L.U.M 696"
+      ]
+    }
+  ],
+  "inferred_signals": {
+    "education": {
+      "school": [
+        "Fudan University (复旦大学)"
+      ],
+      "grade_level": [
+        "junior year (大三)",
+        "sophomore year (大二)"
+      ],
+      "certifications": [
+        "IELTS (雅思)"
+      ]
+    },
+    "career_domains": {
+      "primary market / buy-side": [
+        "复旦大三｜一级买方面试复盘 P.L.U.M 731",
+        "复旦大三｜在一级摸爬滚打一个月，我学到了啥 P.L.U.M 295",
+        "最近在考虑出国，但发现很多学校的语言成绩要求是雅思总分7.5，小分7，甚至还有学校不接受新版托福成绩了，一开始感觉口语7分简直比登天还难，自学了3周，最后非常幸运首考就过了！\n\t\n🔴口语\n先分享一下我考到的口语题目～\nPart 1\nwork",
+        "前阵子在找下一份实习于是面了很多很多场试，不得不感慨一下VC跳PE确实有难度，VC跳更高一个tier的VC也不简单，总结了几个点分享给大家。\n\t\n🔴PE和VC投资人的区别\n\t\nVC投资人经常要飞往全国甚至全球各地聊各种各样的创业团队和同行，"
+      ],
+      "energy consulting": [
+        "复旦大二｜叛逃金融圈，误入能源咨询的一夏🌍 P.L.U.M 413",
+        "回国之后便一直想着找一级的实习，上了MBB+三中一华的配置却依然投得很艰难，但有幸在八月被一家top CVC捞上岸。最近帮老板做deal+招实习生，收了快70份简历但能入老板眼的不超过5份，很多我原本以为的“竞争力”在VC其实不成立，也不断",
+        "机缘巧合之下，这个暑假我去体验了一下金融以外的世界。先说结论，撕了金融的伞，发现外面根本没有雨。\n\t\n暑假在一家外资能源咨询实习，主要做Research工作，不是战略咨询，有点像个专业垂直领域的“智库”，主要靠向能源实体企业与金融机构卖报告",
+        "第一份实习的常见去向有券商研究所、咨询PTA、四大审计。\n🧡券商研究所\n券商研究所的实习俗称“行研”，属于二级卖方，分为行业组（汽车/金属/能源/食品饮料/电子/电新/传媒/机械/医药等等）和总量组（宏观/策略/固收）。\n\t\n第一份实习建议"
+      ],
+      "finance (general)": [
+        "复旦大二｜叛逃金融圈，误入能源咨询的一夏🌍 P.L.U.M 413",
+        "前阵子在找下一份实习于是面了很多很多场试，不得不感慨一下VC跳PE确实有难度，VC跳更高一个tier的VC也不简单，总结了几个点分享给大家。\n\t\n🔴PE和VC投资人的区别\n\t\nVC投资人经常要飞往全国甚至全球各地聊各种各样的创业团队和同行，",
+        "回国之后便一直想着找一级的实习，上了MBB+三中一华的配置却依然投得很艰难，但有幸在八月被一家top CVC捞上岸。最近帮老板做deal+招实习生，收了快70份简历但能入老板眼的不超过5份，很多我原本以为的“竞争力”在VC其实不成立，也不断",
+        "机缘巧合之下，这个暑假我去体验了一下金融以外的世界。先说结论，撕了金融的伞，发现外面根本没有雨。\n\t\n暑假在一家外资能源咨询实习，主要做Research工作，不是战略咨询，有点像个专业垂直领域的“智库”，主要靠向能源实体企业与金融机构卖报告"
+      ],
+      "internship strategy": [
+        "复旦大二｜如何找第一份实习 P.L.U.M 1537",
+        "复旦大二｜如何为下一份实习做准备 P.L.U.M 338",
+        "复旦大二｜找实习做规划，少走弯路 P.L.U.M 696",
+        "前阵子在找下一份实习于是面了很多很多场试，不得不感慨一下VC跳PE确实有难度，VC跳更高一个tier的VC也不简单，总结了几个点分享给大家。\n\t\n🔴PE和VC投资人的区别\n\t\nVC投资人经常要飞往全国甚至全球各地聊各种各样的创业团队和同行，"
+      ]
+    },
+    "skills_inferred": [
+      "interview preparation & self-reflection",
+      "exam strategy & structured review",
+      "internship sourcing & application",
+      "career & academic planning",
+      "mentorship / path-finding insight",
+      "English proficiency (IELTS)",
+      "buy-side investment analysis",
+      "energy sector consulting",
+      "hands-on industry learning",
+      "personal growth reflection",
+      "exam strategy & structured test prep",
+      "buy-side investment analysis & deal evaluation",
+      "personal growth & self-reflection",
+      "market research & due diligence",
+      "deal sourcing & networking"
+    ],
+    "content_roles": [
+      {
+        "role": "knowledge-sharer: posts structured as how-to guides or lessons learned",
+        "evidence": "复旦大三｜4.11雅思出分&备考经验分享 P.L.U.M 99"
+      },
+      {
+        "role": "reflective-learner: posts that review and distill past experiences",
+        "evidence": "复旦大三｜一级买方面试复盘 P.L.U.M 731"
+      },
+      {
+        "role": "reflective-learner: synthesizing learning from real-world experience",
+        "evidence": "复旦大三｜在一级摸爬滚打一个月，我学到了啥 P.L.U.M 295"
+      },
+      {
+        "role": "planner: forward-looking posts about preparation and strategy",
+        "evidence": "复旦大二｜找实习做规划，少走弯路 P.L.U.M 696"
+      },
+      {
+        "role": "mentor-figure: posts offering directional advice to peers",
+        "evidence": "复旦大二｜找实习做规划，少走弯路 P.L.U.M 696"
+      },
+      {
+        "role": "storyteller: narrative posts about personal development arc",
+        "evidence": "复旦大二｜我的成长轨迹 P.L.U.M 71"
+      },
+      {
+        "role": "independent-thinker: posts about unconventional career choices",
+        "evidence": "复旦大二｜叛逃金融圈，误入能源咨询的一夏🌍 P.L.U.M 413"
+      },
+      {
+        "role": "visual-creator: photography-oriented travel posts",
+        "evidence": "天津出片日记 P.L.U.M 2"
+      },
+      {
+        "role": "lifestyle-documenter: casual travelogue style",
+        "evidence": "云南小游 P.L.U.M 9"
+      }
+    ]
+  },
+  "style_profile": {
+    "writing_style": [
+      "uses hashtag-based topic framing",
+      "includes medium-length captions",
+      "often uses concise captions",
+      "structured title format: [identity] | [topic] — consistent personal-brand framing"
+    ],
+    "visual_style": [
+      "image-led lifestyle presentation",
+      "nature and cityscape photography"
+    ],
+    "tone": [
+      "educational / mentorship-oriented",
+      "warm and personal",
+      "candid and self-reflective"
+    ]
+  },
+  "audience_guess": {
+    "description": "Likely audience: Fudan students and aspiring applicants; peers pursuing finance/consulting careers; students preparing for study-abroad exams (IELTS)",
+    "confidence": 0.75,
+    "evidence": [
+      "Cherry Blossom｜Washington DC P.L.U.M 4",
+      "迈阿密的日出与晚霞 P.L.U.M 5",
+      "复旦大三｜4.11雅思出分&备考经验分享 P.L.U.M 99",
+      "复旦大三｜一级买方面试复盘 P.L.U.M 731",
+      "复旦大三｜4.11雅思出分&备考经验分享 P.L.U.M 99"
+    ]
+  },
+  "commercial_signals": {
+    "has_brand_or_product_signal": true,
+    "categories": [
+      "brand/product mention"
+    ],
+    "evidence": [
+      {
+        "category": "brand/product mention",
+        "evidence": "复旦大三｜一级买方面试复盘 P.L.U.M 731"
+      }
+    ]
+  },
+  "limitations": [
+    "Body text extracted for 8 notes via CDP click-through; remaining notes have title-only evidence. Xiaohongshu detail pages are accessible only through in-site navigation with session tokens, not direct URL access."
+  ],
+  "confidence": 0.95
+}
