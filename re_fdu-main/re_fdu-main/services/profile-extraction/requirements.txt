@@ -1,0 +1,4 @@
+pydantic>=2.0
+requests>=2.31
+numpy>=1.24
+faiss-cpu>=1.7

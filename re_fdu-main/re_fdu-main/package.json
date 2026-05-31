@@ -12,6 +12,8 @@
     "build:app": "bun --cwd apps/app run build",
     "typecheck:site": "bun --cwd apps/site run typecheck",
     "typecheck:app": "bun --cwd apps/app run typecheck",
-    "typecheck:contracts": "bun --cwd packages/contracts run typecheck"
+    "typecheck:contracts": "bun --cwd packages/contracts run typecheck",
+    "pipeline:setup": "pip install -r services/profile-extraction/requirements.txt",
+    "pipeline:run": "cd services/profile-extraction && python run_pipeline.py"
   }
 }
