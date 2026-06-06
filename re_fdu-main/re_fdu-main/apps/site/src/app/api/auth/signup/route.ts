@@ -26,7 +26,7 @@ export async function POST(request: Request) {
       role: body.role as "senior" | "junior",
       displayName: String(body.displayName ?? ""),
     });
-    const token = createSession(row.id);
+    const token = await createSession(row.id);
     await setSessionCookie(token);
     return NextResponse.json({ user: toPublicUser(row) });
   } catch (e) {

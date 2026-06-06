@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 export async function POST() {
   const token = await readSessionCookie();
   if (token) {
-    destroySession(token);
+    await destroySession(token);
   }
   await clearSessionCookie();
   return NextResponse.json({ success: true });

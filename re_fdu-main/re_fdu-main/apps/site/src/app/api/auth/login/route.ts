@@ -31,7 +31,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "请输入密码" }, { status: 400 });
   }
 
-  const row = findUserByUsername(username);
+  const row = await findUserByUsername(username);
   if (!row) {
     return NextResponse.json({ error: "用户名或密码错误" }, { status: 401 });
   }
@@ -41,7 +41,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "用户名或密码错误" }, { status: 401 });
   }
 
-  const token = createSession(row.id);
+  const token = await createSession(row.id);
   await setSessionCookie(token);
   return NextResponse.json({ user: toPublicUser(row) });
 }
