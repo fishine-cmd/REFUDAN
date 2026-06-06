@@ -1,20 +1,47 @@
 # schoolmate/collectors/github_collector.py
-"""GitHub public profile collector via Edge CDP."""
+"""GitHub public profile collector via REST API.
+
+Replaces the older CDP-based implementation (which scraped github.com
+through a headless browser). Uses the public REST API at api.github.com
+which is faster, more reliable, and does not require Edge to be running.
+
+Anonymous calls are rate-limited to 60 requests/hour. Set the
+GITHUB_TOKEN environment variable to a personal access token (no scopes
+needed for public data) to get 5000 requests/hour.
+"""
 
 from __future__ import annotations
 
+import base64
+import os
 import time
 from datetime import datetime, timezone
 from typing import Any
 
-from extract_xhs_profile import create_tab, close_tab, navigate, eval_js
+import requests
+
 from schoolmate.collectors.base import BaseCollector, normalize_note
+
+API_ROOT = "https://api.github.com"
+_DEFAULT_TIMEOUT = 20
+_RATE_LIMIT_RETRIES = 1
 
 
 class GitHubCollector(BaseCollector):
-    """Scrape public GitHub profile: pinned repos, popular repos, and READMEs."""
+    """Fetch a public GitHub profile + most-recently-updated repos via REST."""
 
     platform = "github"
+
+    def __init__(self) -> None:
+        self.session = requests.Session()
+        self.session.headers.update({
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "schoolmate-profile-extractor/1.0",
+        })
+        token = os.environ.get("GITHUB_TOKEN")
+        if token:
+            self.session.headers["Authorization"] = f"Bearer {token}"
 
     def collect(
         self,
@@ -25,164 +52,187 @@ class GitHubCollector(BaseCollector):
         warnings: list[str] = []
         notes: list[dict[str, Any]] = []
 
-        target = create_tab(f"https://github.com/{username}")
+        username = username.strip().lstrip("@")
+        if "/" in username or not username:
+            return self.empty_result(
+                "github", username, warnings,
+                f"Invalid GitHub username: '{username}'"
+            )
+
+        # 1. User profile
+        user_data = self._get_user(username, warnings)
+        if user_data is None:
+            return self.empty_result(
+                "github", username, warnings,
+                f"GitHub user '{username}' not found or API error"
+            )
+
+        # 2. Repo list (skip forks; sort by updated_at desc)
+        repos = self._get_repos(username, max_repos, warnings)
+
+        # 3. README for each repo
+        for repo in repos:
+            owner_login = repo.get("owner", {}).get("login", username)
+            repo_name = repo.get("name", "")
+            full_name = repo.get("full_name", f"{owner_login}/{repo_name}")
+            if not repo_name:
+                continue
+
+            readme_text = self._get_readme(owner_login, repo_name, max_readme_chars, warnings)
+            description = (repo.get("description") or "").strip()
+            note_text = readme_text or description
+
+            notes.append(normalize_note({
+                "note_id": repo_name,
+                "url": repo.get("html_url", f"https://github.com/{full_name}"),
+                "title": repo_name,
+                "text": note_text,
+                "tags": repo.get("topics", []) or [],
+                "publish_time": repo.get("updated_at", ""),
+                "like_count": repo.get("stargazers_count"),
+                "comment_count": repo.get("open_issues_count"),
+                "favorite_count": repo.get("forks_count"),
+            }))
+
+        return {
+            "platform": "github",
+            "input": {"identifier": username, "display_name_hint": None},
+            "resolved_profile": {
+                "nickname": user_data.get("name") or username,
+                "bio": user_data.get("bio") or "",
+                "profile_url": user_data.get("html_url") or f"https://github.com/{username}",
+                "github_username": username,
+                "avatar_url": user_data.get("avatar_url") or "",
+                "followers": user_data.get("followers"),
+                "following": user_data.get("following"),
+                "location": user_data.get("location") or "",
+                "company": user_data.get("company") or "",
+                "blog": user_data.get("blog") or "",
+                "public_repos": user_data.get("public_repos"),
+                "created_at": user_data.get("created_at") or "",
+            },
+            "notes": notes,
+            "diagnostics": {
+                "repos_found": len(repos),
+                "readmes_extracted": sum(1 for n in notes if n.get("text")),
+                "auth_mode": "token" if "Authorization" in self.session.headers else "anonymous",
+            },
+            "extraction_status": {
+                "success": bool(notes or user_data.get("name")),
+                "partial": bool(warnings),
+                "failure_reason": "" if (notes or user_data.get("name")) else "no public data",
+                "warnings": warnings,
+            },
+            "collected_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    # ────────────────────────────────────────────────────────────────
+    # Internals
+    # ────────────────────────────────────────────────────────────────
+
+    def _get_user(self, username: str, warnings: list[str]) -> dict[str, Any] | None:
+        resp = self._get_with_retry(f"{API_ROOT}/users/{username}", warnings)
+        if resp is None:
+            return None
+        if resp.status_code == 404:
+            return None
+        if not resp.ok:
+            warnings.append(f"GET /users/{username} → HTTP {resp.status_code}")
+            return None
+        return resp.json()
+
+    def _get_repos(
+        self,
+        username: str,
+        max_repos: int,
+        warnings: list[str],
+    ) -> list[dict[str, Any]]:
+        params = {"sort": "updated", "per_page": max(max_repos * 2, 30), "type": "owner"}
+        resp = self._get_with_retry(f"{API_ROOT}/users/{username}/repos", warnings, params=params)
+        if resp is None or not resp.ok:
+            if resp is not None:
+                warnings.append(f"GET /users/{username}/repos → HTTP {resp.status_code}")
+            return []
+        data = resp.json()
+        if not isinstance(data, list):
+            return []
+        non_forks = [r for r in data if not r.get("fork")]
+        return non_forks[:max_repos]
+
+    def _get_readme(
+        self,
+        owner: str,
+        repo: str,
+        max_chars: int,
+        warnings: list[str],
+    ) -> str:
+        resp = self._get_with_retry(
+            f"{API_ROOT}/repos/{owner}/{repo}/readme",
+            warnings,
+            allow_404=True,
+        )
+        if resp is None:
+            return ""
+        if resp.status_code == 404:
+            return ""
+        if not resp.ok:
+            warnings.append(f"GET /repos/{owner}/{repo}/readme → HTTP {resp.status_code}")
+            return ""
+        body = resp.json()
+        encoded = body.get("content", "")
+        if body.get("encoding") != "base64" or not encoded:
+            return ""
         try:
-            time.sleep(5)
-            profile_data = self._scrape_profile_page(target, username)
-            if profile_data.get("not_found"):
-                return self.empty_result(
-                    "github", username, warnings,
-                    f"GitHub user '{username}' not found or profile is private."
+            decoded = base64.b64decode(encoded).decode("utf-8", errors="replace")
+        except Exception as e:  # noqa: BLE001
+            warnings.append(f"README decode failed for {owner}/{repo}: {e}")
+            return ""
+        return decoded[:max_chars]
+
+    def _get_with_retry(
+        self,
+        url: str,
+        warnings: list[str],
+        params: dict[str, Any] | None = None,
+        allow_404: bool = False,
+    ) -> requests.Response | None:
+        for attempt in range(_RATE_LIMIT_RETRIES + 1):
+            try:
+                resp = self.session.get(url, params=params, timeout=_DEFAULT_TIMEOUT)
+            except requests.RequestException as e:
+                warnings.append(f"Request failed for {url}: {e}")
+                return None
+
+            if resp.status_code == 404 and allow_404:
+                return resp
+
+            if resp.status_code in (403, 429):
+                reset_at = resp.headers.get("X-RateLimit-Reset")
+                remaining = resp.headers.get("X-RateLimit-Remaining", "?")
+                if attempt < _RATE_LIMIT_RETRIES:
+                    wait_s = self._compute_wait_seconds(reset_at)
+                    warnings.append(
+                        f"Rate-limited at {url} (remaining={remaining}); "
+                        f"sleeping {wait_s}s before retry"
+                    )
+                    time.sleep(wait_s)
+                    continue
+                warnings.append(
+                    f"Rate-limited at {url} (remaining={remaining}); "
+                    "set GITHUB_TOKEN env var for 5000 req/hr"
                 )
+                return resp
 
-            repo_urls = self._collect_repo_urls(target, max_repos)
+            return resp
+        return None
 
-            for repo_url in repo_urls:
-                try:
-                    navigate(target, repo_url)
-                    time.sleep(3)
-                    readme = self._extract_readme(target, max_readme_chars)
-                    repo_info = self._extract_repo_info(target)
-
-                    note_text = readme if readme else repo_info.get("description", "")
-                    notes.append(normalize_note({
-                        "note_id": repo_url.rstrip("/").rsplit("/", 1)[-1],
-                        "url": repo_url,
-                        "title": repo_info.get("name", repo_url),
-                        "text": note_text,
-                        "tags": repo_info.get("topics", []),
-                        "publish_time": repo_info.get("last_updated", ""),
-                        "like_count": repo_info.get("stars"),
-                        "comment_count": None,
-                        "favorite_count": repo_info.get("forks"),
-                    }))
-                except Exception as e:
-                    warnings.append(f"Failed to scrape repo {repo_url}: {e}")
-
-            return {
-                "platform": "github",
-                "input": {"identifier": username, "display_name_hint": None},
-                "resolved_profile": {
-                    "nickname": profile_data.get("name", username),
-                    "bio": profile_data.get("bio", ""),
-                    "profile_url": f"https://github.com/{username}",
-                    "github_username": username,
-                    "avatar_url": profile_data.get("avatar_url", ""),
-                    "followers": profile_data.get("followers"),
-                    "following": profile_data.get("following"),
-                    "location": profile_data.get("location", ""),
-                    "company": profile_data.get("company", ""),
-                },
-                "notes": notes,
-                "diagnostics": {
-                    "repos_found": len(repo_urls),
-                    "readmes_extracted": sum(1 for n in notes if n.get("text")),
-                },
-                "extraction_status": {
-                    "success": bool(notes or profile_data.get("name")),
-                    "partial": bool(warnings),
-                    "failure_reason": "" if notes else "no repos found",
-                    "warnings": warnings,
-                },
-                "collected_at": datetime.now(timezone.utc).isoformat(),
-            }
-        finally:
-            close_tab(target)
-
-    def _scrape_profile_page(self, target: str, username: str) -> dict[str, Any]:
-        script = r"""
-        (() => {
-            const clean = (s) => (s || '').replace(/\s+/g, ' ').trim();
-            const nameEl = document.querySelector('[itemprop="name"], .p-name, .vcard-fullname');
-            const bioEl = document.querySelector('[itemprop="description"], .p-note, .user-profile-bio');
-            const locEl = document.querySelector('[itemprop="homeLocation"], .p-label');
-            const orgEl = document.querySelector('[itemprop="worksFor"], .p-org');
-            const avatarEl = document.querySelector('avatar-img img, .avatar-user');
-            const followerEls = document.querySelectorAll('.text-bold[href*="followers"], a[href*="followers"] .text-bold');
-            let followers = null, following = null;
-            followerEls.forEach(el => {
-                const parent = el.closest('a');
-                if (parent && /followers/.test(parent.href)) followers = clean(el.textContent);
-                if (parent && /following/.test(parent.href)) following = clean(el.textContent);
-            });
-            return {
-                name: clean(nameEl?.textContent || document.title.split('·')[0] || ''),
-                bio: clean(bioEl?.textContent || ''),
-                location: clean(locEl?.textContent || ''),
-                company: clean(orgEl?.textContent || ''),
-                avatar_url: avatarEl?.src || '',
-                followers: followers,
-                following: following,
-                not_found: document.title.includes('Page not found') || document.body?.innerText.includes('This is not the web page you are looking for')
-            };
-        })()
-        """
-        result = eval_js(target, script, timeout=20)
-        return result if isinstance(result, dict) else {}
-
-    def _collect_repo_urls(self, target: str, max_repos: int) -> list[str]:
-        script = r"""
-        (() => {
-            const repos = new Set();
-            document.querySelectorAll('.pinned-item-list-item-content a, [class*=pinned] a[href*="/"]').forEach(a => {
-                const href = a.href || a.getAttribute('href') || '';
-                const m = href.match(/\/([^/]+\/[^/]+?)(?:$|\?|#)/);
-                if (m && !/\/search\//.test(href)) repos.add('https://github.com/' + m[1]);
-            });
-            document.querySelectorAll('[itemprop="owns"] a, ol[class*=repo] a[itemprop], #user-repositories-list a[itemprop="name codeRepository"]').forEach(a => {
-                const href = a.href || a.getAttribute('href') || '';
-                const m = href.match(/\/([^/]+\/[^/]+?)(?:$|\?|#)/);
-                if (m) repos.add('https://github.com/' + m[1]);
-            });
-            if (repos.size === 0) {
-                document.querySelectorAll('a[href*="/"]').forEach(a => {
-                    const href = a.href || a.getAttribute('href') || '';
-                    const m = href.match(/github\.com\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+?)(?:$|\?|#)/);
-                    if (m && !/\/search\//.test(href) && !/\/features\//.test(href) && !repos.has('https://github.com/' + m[1])) {
-                        repos.add('https://github.com/' + m[1]);
-                    }
-                });
-            }
-            return Array.from(repos).slice(0, 20);
-        })()
-        """
-        repos = eval_js(target, script, timeout=20)
-        if isinstance(repos, list):
-            return [r for r in repos if isinstance(r, str)][:max_repos]
-        return []
-
-    def _extract_readme(self, target: str, max_chars: int) -> str:
-        script = r"""
-        (() => {
-            const article = document.querySelector('article.markdown-body, .readme, [data-target="readme-toc.content"], #readme');
-            if (!article) return '';
-            return (article.innerText || article.textContent || '').trim();
-        })()
-        """
-        text = eval_js(target, script, timeout=20)
-        return str(text)[:max_chars] if text else ""
-
-    def _extract_repo_info(self, target: str) -> dict[str, Any]:
-        script = r"""
-        (() => {
-            const clean = (s) => (s || '').replace(/\s+/g, ' ').trim();
-            const nameEl = document.querySelector('strong[itemprop="name"] a, h1 strong a, [data-component="text"][data-content]');
-            const descEl = document.querySelector('[itemprop="about"], .f4.my-3, p.f4');
-            const topics = Array.from(document.querySelectorAll('.topic-tag, a[data-ga-click*="topic"]')).map(t => clean(t.textContent));
-            const starsEl = document.querySelector('a[href*="/stargazers"] strong, #repo-stars-counter-star');
-            const forksEl = document.querySelector('a[href*="/forks"] strong, #repo-network-counter');
-            const timeEl = document.querySelector('relative-time, time-ago');
-            const langEl = document.querySelector('[itemprop="programmingLanguage"], .d-inline-flex.flex-items-center [class*=Progress] ~ span');
-            return {
-                name: clean(nameEl?.textContent || document.title.split('/').pop() || ''),
-                description: clean(descEl?.textContent || ''),
-                topics: topics.slice(0, 15),
-                stars: parseInt(starsEl?.textContent?.replace(/,/g, '') || '0', 10) || null,
-                forks: parseInt(forksEl?.textContent?.replace(/,/g, '') || '0', 10) || null,
-                last_updated: timeEl?.getAttribute('datetime') || clean(timeEl?.textContent) || '',
-                language: clean(langEl?.textContent || ''),
-            };
-        })()
-        """
-        result = eval_js(target, script, timeout=15)
-        return result if isinstance(result, dict) else {}
+    @staticmethod
+    def _compute_wait_seconds(reset_at: str | None) -> int:
+        if not reset_at:
+            return 30
+        try:
+            reset_ts = int(reset_at)
+            now_ts = int(time.time())
+            return max(5, min(reset_ts - now_ts + 2, 60))
+        except (ValueError, TypeError):
+            return 30
