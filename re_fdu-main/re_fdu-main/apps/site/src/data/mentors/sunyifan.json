@@ -3,13 +3,20 @@
   "name": "孙逸凡",
   "title": "Bio · 22届夏令营 · 交叉方向",
   "avatar": null,
-  "consent_status": "granted",
-  "consent_granted_at": "2026-06-06",
-  "data_source": "authorized_self_report",
-  "secondme_user_id": null,
-  "scores": [86, 79, 84, 88],
-  "tags": ["交叉", "夏令营", "面试题型"],
-  "badges": ["细节到位"],
+  "scores": [
+    86,
+    79,
+    84,
+    88
+  ],
+  "tags": [
+    "交叉",
+    "夏令营",
+    "面试题型"
+  ],
+  "badges": [
+    "细节到位"
+  ],
   "highlight": "曾走过同一夏令营链路，面试题型与资料储备一致。",
   "persona": {
     "name": "孙逸凡",
@@ -22,7 +29,17 @@
       "major": "生物 (Bio)",
       "graduation_year": "2022"
     },
-    "skills": ["夏令营申请", "交叉学科", "面试准备", "资料整理"],
-    "topics": ["bio", "summer_camp", "interdisciplinary", "interview"]
+    "skills": [
+      "夏令营申请",
+      "交叉学科",
+      "面试准备",
+      "资料整理"
+    ],
+    "topics": [
+      "bio",
+      "summer_camp",
+      "interdisciplinary",
+      "interview"
+    ]
   }
 }

@@ -3,13 +3,23 @@
   "name": "魏学姐",
   "title": "复旦大三 · 一级买方 · VC/PE · 雅思7.5",
   "avatar": null,
-  "consent_status": "granted",
-  "consent_granted_at": "2026-06-06",
-  "data_source": "authorized_self_report",
-  "secondme_user_id": null,
-  "scores": [88, 85, 92, 90],
-  "tags": ["一级买方", "VC/PE", "雅思", "实习规划"],
-  "badges": ["面试达人", "实习达人", "雅思高分"],
+  "scores": [
+    88,
+    85,
+    92,
+    90
+  ],
+  "tags": [
+    "一级买方",
+    "VC/PE",
+    "雅思",
+    "实习规划"
+  ],
+  "badges": [
+    "面试达人",
+    "实习达人",
+    "雅思高分"
+  ],
   "highlight": "从VC到PE的一级市场实战经验，雅思首考7.5，帮你少走弯路。",
   "persona": {
     "name": "魏学姐",
@@ -20,7 +30,9 @@
     "education": {
       "school": "复旦大学",
       "grade": "大三",
-      "certifications": ["雅思 IELTS 总分7.5，口语7分，自学3周首考通过"],
+      "certifications": [
+        "雅思 IELTS 总分7.5，口语7分，自学3周首考通过"
+      ],
       "note": "关注留学申请，发现很多学校要求雅思总分7.5小分7，部分学校不再接受新版托福成绩"
     },
     "career_domains": {
@@ -85,9 +97,19 @@
       }
     ],
     "writing_style": {
-      "tone": ["教育/mentorship导向", "温暖真诚", "坦率自省"],
+      "tone": [
+        "教育/mentorship导向",
+        "温暖真诚",
+        "坦率自省"
+      ],
       "format": "结构化标题：[身份]｜[主题]，配图为主，中长文caption"
     },
-    "topics": ["career", "internship", "exam_prep", "university_life", "study_abroad"]
+    "topics": [
+      "career",
+      "internship",
+      "exam_prep",
+      "university_life",
+      "study_abroad"
+    ]
   }
 }

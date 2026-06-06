@@ -24,3 +24,9 @@ services/profile-extraction/data/*.db
 services/profile-extraction/data/*.faiss
 services/profile-extraction/data/browser_profile/
 services/profile-extraction/outputs/
+
+# 多用户运行时数据库（含密码 hash, 严禁提交）
+apps/site/data/users.db
+apps/site/data/users.db-journal
+apps/site/data/users.db-wal
+apps/site/data/users.db-shm

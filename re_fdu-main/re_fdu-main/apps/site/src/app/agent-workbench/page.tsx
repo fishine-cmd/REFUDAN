@@ -115,14 +115,27 @@ function AgentWorkbenchInner() {
   const [zhihuId, setZhihuId] = useState("");
   const [builtProfile, setBuiltProfile] = useState<Record<string, unknown> | null>(null);
 
-  /* ── Restore persisted builtProfile across page reloads ── */
+  /* ── Auth + server-side builtProfile (Phase 4) ── */
   useEffect(() => {
-    try {
-      const raw = typeof window !== "undefined" ? window.localStorage.getItem("refudan.builtProfile") : null;
-      if (raw) setBuiltProfile(JSON.parse(raw));
-    } catch {
-      // ignore corrupt storage
-    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/profile/me", { credentials: "same-origin" });
+        if (res.status === 401) {
+          window.location.href = "/login";
+          return;
+        }
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+        if (data?.builtProfile) setBuiltProfile(data.builtProfile);
+      } catch {
+        // network error; do nothing, user can still use the page in degraded state
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const [knowledgeItems, setKnowledgeItems] = useState([
@@ -329,11 +342,8 @@ function AgentWorkbenchInner() {
       const data = await res.json();
       if (res.ok && data.profile) {
         setBuiltProfile(data.profile);
-        try {
-          window.localStorage.setItem("refudan.builtProfile", JSON.stringify(data.profile));
-        } catch {
-          // localStorage may be full or disabled; non-fatal
-        }
+        // Backend already persisted to current user's row via /api/profile/build.
+        // No localStorage write needed in multi-user mode.
       } else {
         setErrors([data.error ?? `Profile build failed (HTTP ${res.status})`]);
       }
@@ -360,7 +370,7 @@ function AgentWorkbenchInner() {
           textAlign: "center",
         }}
       >
-        合规提示：本工作台中由 SecondMe 分身或兜底 LLM 生成的回复均为「AI 助手代为表达」，非学长学姐本人直接发言；所有学长资料来源于本人主动填写或本人授权的 SecondMe 分身调用。
+        合规提示：本工作台中由 AI 助手生成的回复均为「AI 代为表达」，非学长学姐本人直接发言；所有学长资料来源于本人主动填写或本人授权抓取的公开社媒画像。
       </div>
       {/* ── Nav ── */}
       <aside className="workbench-nav">
@@ -513,9 +523,16 @@ function AgentWorkbenchInner() {
                   <h3 style={{ margin: 0 }}>✅ 画像提取结果（已持久化，将注入"我的 Agent"对话）</h3>
                   <button
                     type="button"
-                    onClick={() => {
+                    onClick={async () => {
+                      try {
+                        await fetch("/api/profile/me", {
+                          method: "DELETE",
+                          credentials: "same-origin",
+                        });
+                      } catch {
+                        // network error; local UI still clears
+                      }
                       setBuiltProfile(null);
-                      try { window.localStorage.removeItem("refudan.builtProfile"); } catch { /* noop */ }
                     }}
                     style={{ fontSize: "0.75rem", padding: "0.3rem 0.75rem", borderRadius: "4px", border: "1px solid var(--border-default, #888)", background: "transparent", color: "inherit", cursor: "pointer" }}
                   >

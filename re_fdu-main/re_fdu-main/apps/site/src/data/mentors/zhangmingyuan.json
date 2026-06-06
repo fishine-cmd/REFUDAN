@@ -3,13 +3,20 @@
   "name": "张明远",
   "title": "Math · 22届实习 · 量化研究",
   "avatar": null,
-  "consent_status": "granted",
-  "consent_granted_at": "2026-06-06",
-  "data_source": "authorized_self_report",
-  "secondme_user_id": null,
-  "scores": [84, 90, 82, 86],
-  "tags": ["量化", "实习", "笔试复盘"],
-  "badges": ["节奏清晰"],
+  "scores": [
+    84,
+    90,
+    82,
+    86
+  ],
+  "tags": [
+    "量化",
+    "实习",
+    "笔试复盘"
+  ],
+  "badges": [
+    "节奏清晰"
+  ],
   "highlight": "从数学到量化的转型路径相同，实习准备节奏可复用。",
   "persona": {
     "name": "张明远",
@@ -22,7 +29,17 @@
       "major": "数学 (Math)",
       "graduation_year": "2022"
     },
-    "skills": ["量化研究", "笔试准备", "数学建模", "实习规划"],
-    "topics": ["math", "quant", "internship", "career_transition"]
+    "skills": [
+      "量化研究",
+      "笔试准备",
+      "数学建模",
+      "实习规划"
+    ],
+    "topics": [
+      "math",
+      "quant",
+      "internship",
+      "career_transition"
+    ]
   }
 }

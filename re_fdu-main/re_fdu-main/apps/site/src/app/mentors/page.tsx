@@ -7,8 +7,6 @@ type MentorSummary = {
   name: string;
   title: string;
   avatar: string | null;
-  consent_status?: "granted" | "pending" | "revoked";
-  secondme_linked?: boolean;
   scores: [number, number, number, number];
   tags: string[];
   badges: string[];
@@ -78,26 +76,6 @@ export default function MentorMatchPage() {
                 <div>
                   <p className="mentor-card__alias">{mentor.name}</p>
                   <p className="mentor-card__title">{mentor.title}</p>
-                  <span
-                    style={{
-                      display: "inline-block",
-                      marginTop: "0.35rem",
-                      fontSize: "0.65rem",
-                      padding: "0.15rem 0.5rem",
-                      borderRadius: "999px",
-                      border: "1px solid var(--border-default)",
-                      background: mentor.secondme_linked
-                        ? "rgba(34, 197, 94, 0.12)"
-                        : "rgba(234, 179, 8, 0.10)",
-                      color: mentor.secondme_linked
-                        ? "rgb(74, 222, 128)"
-                        : "rgb(234, 179, 8)",
-                    }}
-                  >
-                    {mentor.secondme_linked
-                      ? "SecondMe 分身已接入"
-                      : "本人已同意 · 待 SecondMe 绑定"}
-                  </span>
                 </div>
               </div>
 

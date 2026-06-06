@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { loadMentor } from "@/data/mentors";
-import { getMentorToken, streamChat as secondmeStreamChat } from "@/lib/secondme";
 
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 // Base URL must NOT include /v1 — the route appends it. This matches the
@@ -181,40 +180,6 @@ function extractKeyExperiencesFromBuiltProfile(profile: Record<string, unknown>)
 }
 
 
-async function secondmeChatResponse(
-  accessToken: string,
-  messages: { role: string; content: string }[],
-  mentorId: string,
-): Promise<Response> {
-  // SecondMe chat/stream 只接受单条 message，取最后一条 user 输入
-  const lastUser = [...messages].reverse().find((m) => m.role === "user");
-  const userMessage = lastUser?.content ?? "";
-
-  let collected = "";
-  try {
-    await secondmeStreamChat(accessToken, userMessage, (delta) => {
-      collected += delta;
-    });
-  } catch (e) {
-    const message = e instanceof Error ? e.message : "Unknown error";
-    console.error("SecondMe streamChat failed:", message);
-    return NextResponse.json(
-      {
-        error: `SecondMe 分身响应失败：${message}`,
-        source: "secondme",
-        mentorId,
-      },
-      { status: 502 },
-    );
-  }
-
-  return NextResponse.json({
-    reply: collected || "（SecondMe 分身未返回内容）",
-    source: "secondme",
-    mentorId,
-  });
-}
-
 export async function POST(request: Request) {
   let body: { messages?: unknown; mentorId?: unknown; persona?: unknown; builtProfile?: unknown };
   try {
@@ -237,24 +202,12 @@ export async function POST(request: Request) {
     );
   }
 
-  // ─── SecondMe 主路径 ──────────────────────────────────────────
-  // 当 mentor 已授权且已绑定 SecondMe token，走 SSE 流式分身对话
-  if (mentorId) {
-    const profile = loadMentor(mentorId);
-    if (profile?.consent_status === "granted") {
-      const token = getMentorToken(mentorId);
-      if (token) {
-        return await secondmeChatResponse(token.accessToken, messages, mentorId);
-      }
-    }
-  }
-
-  // ─── DeepSeek 兜底路径 ────────────────────────────────────────
+  // ─── DeepSeek 主路径（项目已不再接入 SecondMe，全部对话走 DeepSeek） ──
   if (!DEEPSEEK_API_KEY) {
     return NextResponse.json(
       {
         error:
-          "未配置任何 LLM 后端。请在 .env.local 设置 DEEPSEEK_API_KEY 或为该 mentor 完成 SecondMe 授权。",
+          "未配置 DEEPSEEK_API_KEY，请在 apps/site/.env.local 设置后重启 dev server。",
       },
       { status: 500 }
     );

@@ -1,18 +1,11 @@
 import fs from "fs";
 import path from "path";
 
-export type ConsentStatus = "granted" | "pending" | "revoked";
-
 export interface MentorProfile {
   id: string;
   name: string;
   title: string;
   avatar: string | null;
-  consent_status: ConsentStatus;
-  consent_granted_at: string | null;
-  data_source: "authorized_self_report" | "demo_mock";
-  secondme_user_id: string | null;
-  demo_binding_note?: string;
   scores: [number, number, number, number];
   tags: string[];
   badges: string[];
@@ -30,9 +23,6 @@ export interface MentorSummary {
   name: string;
   title: string;
   avatar: string | null;
-  consent_status: ConsentStatus;
-  secondme_linked: boolean;
-  demo_binding_note?: string;
   scores: [number, number, number, number];
   tags: string[];
   badges: string[];
@@ -63,9 +53,6 @@ export function getAllMentors(): MentorSummary[] {
         name: profile.name,
         title: profile.title,
         avatar: profile.avatar,
-        consent_status: profile.consent_status,
-        secondme_linked: profile.secondme_user_id !== null,
-        demo_binding_note: profile.demo_binding_note,
         scores: profile.scores,
         tags: profile.tags,
         badges: profile.badges,

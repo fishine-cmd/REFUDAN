@@ -46,10 +46,10 @@ cd REFUDAN/re_fdu-main/re_fdu-main
 # 2. 装依赖
 bun install
 
-# 3. 配 SecondMe OAuth2（详见 doc/05_代码运行说明.md 第 4 节）
+# 3. 配 .env.local（最少配 DeepSeek API key 即可）
 cp apps/site/.env.example apps/site/.env.local
-# 然后到 https://develop.second-me.cn/integrations/list 注册应用
-# 把 Client ID / Secret 填进 apps/site/.env.local
+# 编辑该文件,设置 DEEPSEEK_API_KEY=sk-xxx
+# 可选: GITHUB_TOKEN=ghp_xxx 提升 GitHub API 速率到 5000/h
 
 # 4. 启动主演示
 cd apps/site
@@ -57,14 +57,33 @@ bun run dev
 # 浏览器打开 http://localhost:3000
 ```
 
-### 演示路径（5 个页面）
+首次访问会自动创建 `apps/site/data/users.db` 并 seed 6 个 demo 学长账号。
+
+### Demo 账号
+
+6 个学长账号统一密码 `demo123`：
+
+| 用户名 | 显示名 |
+|---|---|
+| chensirui | 陈思睿 |
+| chenxiaoyuan | 陈晓远 |
+| sunyifan | 孙逸凡 |
+| weixuejie | 魏雪洁 |
+| wuzihan | 吴子涵 |
+| zhangmingyuan | 张明远 |
+
+学弟身份请走 `/signup` 自助注册（开放注册，选"学弟"角色）。
+
+> 重置 DB：删除 `apps/site/data/users.db` 后下次 dev 启动自动重新 seed。
+
+### 演示路径
 
 ```
-http://localhost:3000               落地页
-http://localhost:3000/mentors       学弟妹浏览推荐学长（雷达图）
-http://localhost:3000/mentor-onboard 学长 SecondMe 授权管理 ← OAuth2 入口
-http://localhost:3000/agent-workbench A2A 对话工作台
-http://localhost:3000/api/auth/secondme/status JSON 状态查询接口
+http://localhost:3000               落地页（含登录/注册入口）
+http://localhost:3000/login         登录
+http://localhost:3000/signup        注册（选学长/学弟）
+http://localhost:3000/mentors       学弟浏览推荐学长（雷达图）
+http://localhost:3000/agent-workbench 个人画像提取 + 与"我的 Agent"或学长对话
 ```
 
 完整运行 / 排错指南：[`doc/05_代码运行说明.md`](doc/05_代码运行说明.md)

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Script from "next/script";
 import type { ReactNode } from "react";
 import { ThemeToggle } from "../components/ThemeToggle";
+import { UserBadge } from "../components/UserBadge";
 import "./globals.css";
 
 const themeScript = `
@@ -43,11 +44,9 @@ export default function RootLayout({
               <a className="frame__button" href="/mentors">
                 Mentors
               </a>
-              <a className="frame__button" href="/mentor-onboard">
-                Onboard
-              </a>
             </div>
             <div className="frame__theme">
+              <UserBadge />
               <span>Theme</span>
               <ThemeToggle />
             </div>

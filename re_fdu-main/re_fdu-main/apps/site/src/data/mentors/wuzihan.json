@@ -3,13 +3,20 @@
   "name": "吴子涵",
   "title": "FinTech · 23届校招 · 金融科技",
   "avatar": null,
-  "consent_status": "granted",
-  "consent_granted_at": "2026-06-06",
-  "data_source": "authorized_self_report",
-  "secondme_user_id": null,
-  "scores": [80, 76, 88, 90],
-  "tags": ["校招", "FinTech", "跨学院"],
-  "badges": ["履历亮点"],
+  "scores": [
+    80,
+    76,
+    88,
+    90
+  ],
+  "tags": [
+    "校招",
+    "FinTech",
+    "跨学院"
+  ],
+  "badges": [
+    "履历亮点"
+  ],
   "highlight": "同样跨学院背景，简历亮点组织方式可直接参考。",
   "persona": {
     "name": "吴子涵",
@@ -22,7 +29,17 @@
       "major": "金融科技 (FinTech)",
       "graduation_year": "2023"
     },
-    "skills": ["校招策略", "简历优化", "面试技巧", "跨专业求职"],
-    "topics": ["fintech", "campus_recruitment", "cross_discipline", "career"]
+    "skills": [
+      "校招策略",
+      "简历优化",
+      "面试技巧",
+      "跨专业求职"
+    ],
+    "topics": [
+      "fintech",
+      "campus_recruitment",
+      "cross_discipline",
+      "career"
+    ]
   }
 }
