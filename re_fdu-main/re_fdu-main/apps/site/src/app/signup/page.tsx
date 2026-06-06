@@ -1,14 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 type Role = "senior" | "junior";
 
-export default function SignupPage() {
+function SignupForm() {
+  const sp = useSearchParams();
+  const presetRole: Role = sp.get("role") === "senior" ? "senior" : "junior";
+
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
-  const [role, setRole] = useState<Role>("junior");
+  const [role, setRole] = useState<Role>(presetRole);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -44,6 +48,9 @@ export default function SignupPage() {
       </p>
 
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+        <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", marginBottom: "0.8rem" }}>
+          当前注册身份:<strong>{role === "senior" ? "学长 / 学姐" : "学弟 / 学妹"}</strong>
+        </p>
         <fieldset style={{ border: "1px solid var(--border-default, #888)", borderRadius: 4, padding: "0.6rem 1rem" }}>
           <legend style={{ fontSize: "0.8rem", padding: "0 0.5rem" }}>身份</legend>
           <label style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem", marginRight: "1.2rem" }}>
@@ -122,5 +129,13 @@ export default function SignupPage() {
         </p>
       </form>
     </main>
+  );
+}
+
+export default function SignupPage() {
+  return (
+    <Suspense fallback={null}>
+      <SignupForm />
+    </Suspense>
   );
 }
