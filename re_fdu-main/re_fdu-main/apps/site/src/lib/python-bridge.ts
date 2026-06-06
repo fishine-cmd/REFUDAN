@@ -6,20 +6,41 @@
  */
 
 import { spawn, spawnSync } from "child_process";
+import { existsSync } from "fs";
 import path from "path";
 
-/** Absolute path to `services/profile-extraction/` relative to the repo root. */
-const PYTHON_DIR = path.join(process.cwd(), "services", "profile-extraction");
+/** Locate `services/profile-extraction/` regardless of where the Next.js
+ * dev server was launched from. The site is started with `cd apps/site &&
+ * bun run dev`, which means process.cwd() is `apps/site/`, NOT the repo
+ * root. We probe both common cases.
+ */
+function resolvePythonDir(): string {
+  const candidates = [
+    path.resolve(process.cwd(), "..", "..", "services", "profile-extraction"),  // from apps/site/
+    path.resolve(process.cwd(), "services", "profile-extraction"),               // from repo root
+    path.resolve(process.cwd(), "..", "services", "profile-extraction"),         // from apps/
+  ];
+  for (const c of candidates) {
+    if (existsSync(c)) return c;
+  }
+  // Last-resort fallback: anchor off this file's compiled location.
+  // In Next.js dev this is under .next/server/..., so going up is fragile,
+  // but at least the error message will name a concrete path.
+  return candidates[0];
+}
+
+const PYTHON_DIR = resolvePythonDir();
 
 /** Resolve the Python executable command once at module load.
  *
- * On Windows, Node's `spawn("python", ...)` without `shell: true` does not
- * auto-resolve the `.exe` extension and fails with ENOENT even when `python`
- * is on PATH for cmd. Probe a few candidates to find one that actually runs.
+ * On Windows, Node's `spawn("python", ...)` does not auto-resolve .exe
+ * extension. Probe candidates and prefer the explicit .exe form so we can
+ * spawn without shell:true (which has the DEP0190 deprecation warning
+ * when args are passed as an array).
  */
 function resolvePythonCommand(): string {
   const candidates = process.platform === "win32"
-    ? ["python", "python.exe", "py", "py.exe", "python3", "python3.exe"]
+    ? ["python.exe", "py.exe", "python3.exe", "python", "py", "python3"]
     : ["python3", "python"];
   for (const cmd of candidates) {
     try {
@@ -60,7 +81,6 @@ export function runPipeline<T = unknown>(
         env: { ...process.env },
         timeout: timeoutMs,
         windowsHide: true,
-        shell: process.platform === "win32",
       },
     );
 
