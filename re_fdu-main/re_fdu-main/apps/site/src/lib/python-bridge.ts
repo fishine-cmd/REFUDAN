@@ -5,11 +5,34 @@
  * JSON object and progress messages go to stderr.
  */
 
-import { spawn } from "child_process";
+import { spawn, spawnSync } from "child_process";
 import path from "path";
 
 /** Absolute path to `services/profile-extraction/` relative to the repo root. */
 const PYTHON_DIR = path.join(process.cwd(), "services", "profile-extraction");
+
+/** Resolve the Python executable command once at module load.
+ *
+ * On Windows, Node's `spawn("python", ...)` without `shell: true` does not
+ * auto-resolve the `.exe` extension and fails with ENOENT even when `python`
+ * is on PATH for cmd. Probe a few candidates to find one that actually runs.
+ */
+function resolvePythonCommand(): string {
+  const candidates = process.platform === "win32"
+    ? ["python", "python.exe", "py", "py.exe", "python3", "python3.exe"]
+    : ["python3", "python"];
+  for (const cmd of candidates) {
+    try {
+      const r = spawnSync(cmd, ["--version"], { shell: true, stdio: "pipe", timeout: 5000 });
+      if (r.status === 0) return cmd;
+    } catch {
+      // try next
+    }
+  }
+  return "python";
+}
+
+const PYTHON_CMD = resolvePythonCommand();
 
 export interface PythonResult<T = unknown> {
   success: boolean;
@@ -30,13 +53,14 @@ export function runPipeline<T = unknown>(
 ): Promise<PythonResult<T>> {
   return new Promise((resolve) => {
     const proc = spawn(
-      "python",
+      PYTHON_CMD,
       ["run_pipeline.py", "--json-output", ...args],
       {
         cwd: PYTHON_DIR,
         env: { ...process.env },
         timeout: timeoutMs,
         windowsHide: true,
+        shell: process.platform === "win32",
       },
     );
 
