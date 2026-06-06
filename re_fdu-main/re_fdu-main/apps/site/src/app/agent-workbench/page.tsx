@@ -1,19 +1,12 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 /* ═══════════════════════════════════════════════════════════════
    Types
    ═══════════════════════════════════════════════════════════════ */
 type SectionId = "profile" | "match" | "plaza" | "more";
-
-type Contact = {
-  id: string;
-  name: string;
-  meta: string;
-  isUserAgent?: boolean;
-};
 
 type MentorSummary = {
   id: string;
@@ -27,8 +20,6 @@ type MentorSummary = {
   meta: string;
 };
 
-type Message = { id: string; sender: "agent" | "user"; content: string };
-
 /* ═══════════════════════════════════════════════════════════════
    Static config
    ═══════════════════════════════════════════════════════════════ */
@@ -39,15 +30,6 @@ const navItems: { id: SectionId; title: string; description: string }[] = [
   { id: "more", title: "更多功能", description: "预留功能扩展位，支持后续新增。" },
 ];
 
-const selfContact: Contact = {
-  id: "self",
-  name: "我的 Agent",
-  meta: "你的专属 Agent 工作台",
-  isUserAgent: true,
-};
-
-const axes = ["院校匹配", "专业匹配", "目标重合", "经历相似"] as const;
-
 const generationSteps = [
   "正在解析你的简历...",
   "提取关键经历...",
@@ -57,44 +39,31 @@ const generationSteps = [
 const privacyOptions = ["公开", "握手后可见", "仅本人确认后可见"] as const;
 
 /* ═══════════════════════════════════════════════════════════════
-   Helpers
-   ═══════════════════════════════════════════════════════════════ */
-function getRadarPoints(values: [number, number, number, number]) {
-  const center = 50;
-  const radius = 38;
-  return values
-    .map((value, index) => {
-      const angle = (Math.PI * 2 * index) / values.length - Math.PI / 2;
-      const ratio = value / 100;
-      const x = center + Math.cos(angle) * radius * ratio;
-      const y = center + Math.sin(angle) * radius * ratio;
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(" ");
-}
-
-/* ═══════════════════════════════════════════════════════════════
    Page
    ═══════════════════════════════════════════════════════════════ */
 function AgentWorkbenchInner() {
   const searchParams = useSearchParams();
 
+  /* ── Role banner ── */
+  const [me, setMe] = useState<{ role: "senior" | "junior" } | null>(null);
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => r.json())
+      .then((d) => {
+        const u = d?.user ?? d;
+        if (u?.role) setMe({ role: u.role });
+      })
+      .catch(() => {
+        // ignore; banner just won't render
+      });
+  }, []);
+
   /* ── Data ── */
   const [mentors, setMentors] = useState<MentorSummary[]>([]);
-  const [dataLoaded, setDataLoaded] = useState(false);
 
   /* ── Navigation ── */
   const [activeSection, setActiveSection] = useState<SectionId>("profile");
   const [activeMentorId, setActiveMentorId] = useState("");
-
-  /* ── Contacts ── */
-  const [contacts, setContacts] = useState<Contact[]>([selfContact]);
-  const [activeId, setActiveId] = useState(selfContact.id);
-
-  /* ── Chat ── */
-  const [conversationState, setConversationState] = useState<Record<string, Message[]>>({});
-  const [chatInput, setChatInput] = useState("");
-  const [isChatLoading, setIsChatLoading] = useState(false);
 
   /* ── Profile form ── */
   const [resumeFileName, setResumeFileName] = useState<string | null>(null);
@@ -144,44 +113,27 @@ function AgentWorkbenchInner() {
     { id: "k3", title: "AI 对话记录 - 科研讨论", source: "历史导入", privacy: "仅本人确认后可见" },
   ]);
 
-  /* ── Load mentors ── */
+  /* ── Load mentors (Plaza only; chat panel removed) ── */
   useEffect(() => {
     fetch("/api/mentors")
       .then((res) => res.json())
       .then((data) => {
         const list: MentorSummary[] = data.mentors ?? [];
         setMentors(list);
-        const mentorContacts: Contact[] = list.map((m) => ({
-          id: m.id,
-          name: m.name,
-          meta: m.title,
-        }));
-        setContacts([selfContact, ...mentorContacts]);
 
-        // Pre-select mentor from query param
+        // Pre-select mentor from query param (for Plaza highlight)
         const paramMentor = searchParams.get("mentor");
         if (paramMentor && list.find((m) => m.id === paramMentor)) {
-          setActiveId(paramMentor);
           setActiveMentorId(paramMentor);
-          setActiveSection("match");
+          setActiveSection("plaza");
         } else if (list.length > 0) {
           setActiveMentorId(list[0].id);
         }
-        setDataLoaded(true);
       })
-      .catch(() => setDataLoaded(true));
+      .catch(() => {
+        // ignore; plaza will just be empty
+      });
   }, [searchParams]);
-
-  /* ── Derived ── */
-  const activeContact = useMemo(
-    () => contacts.find((c) => c.id === activeId) ?? contacts[0],
-    [activeId, contacts]
-  );
-  const activeMentor = useMemo(
-    () => mentors.find((m) => m.id === activeMentorId) ?? mentors[0],
-    [activeMentorId, mentors]
-  );
-  const messages = conversationState[activeContact.id] ?? [];
 
   /* ── Agent generation simulation ── */
   useEffect(() => {
@@ -192,101 +144,12 @@ function AgentWorkbenchInner() {
     }, 1000);
     const timeout = window.setTimeout(() => {
       setIsGenerating(false);
-      const newAgent: Contact = {
-        id: `agent-${Date.now()}`,
-        name: "新生成 Agent",
-        meta: "已就绪 · 可开始匹配",
-        isUserAgent: true,
-      };
-      setContacts((prev) => [selfContact, newAgent, ...prev.slice(1)]);
-      setActiveId(newAgent.id);
-      setActiveSection("match");
     }, 3000);
     return () => {
       window.clearInterval(interval);
       window.clearTimeout(timeout);
     };
   }, [isGenerating]);
-
-  /* ── Chat: send message ── */
-  const handleSendMessage = useCallback(async () => {
-    const trimmed = chatInput.trim();
-    if (!trimmed || isChatLoading) return;
-
-    const userMessage: Message = {
-      id: `${activeContact.id}-${Date.now()}`,
-      sender: "user",
-      content: trimmed,
-    };
-
-    setConversationState((prev) => {
-      const next = prev[activeContact.id] ? [...prev[activeContact.id]] : [];
-      next.push(userMessage);
-      return { ...prev, [activeContact.id]: next };
-    });
-    setChatInput("");
-    setIsChatLoading(true);
-
-    try {
-      const history = conversationState[activeContact.id] ?? [];
-      const apiMessages = [
-        ...history.map((m) => ({
-          role: m.sender === "user" ? ("user" as const) : ("assistant" as const),
-          content: m.content,
-        })),
-        { role: "user" as const, content: trimmed },
-      ];
-
-      const isMentorChat = !activeContact.isUserAgent && activeContact.id !== "self";
-      const body: Record<string, unknown> = { messages: apiMessages };
-      if (isMentorChat) {
-        body.mentorId = activeContact.id;
-      } else {
-        body.persona = {
-          name: "我的 Agent",
-          background: "复旦大学在校生 AI 数字分身，了解你的全部背景与需求",
-          expertise: "根据你的档案信息，提供个性化建议和路径匹配",
-        };
-        // Phase 3a: ship the extracted profile alongside the fallback persona;
-        // backend prefers builtProfile when present, deriving a real persona +
-        // extraContext from the user's GitHub/XHS data.
-        if (builtProfile) body.builtProfile = builtProfile;
-      }
-
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
-
-      const replyContent = data.reply ?? data.error ?? "（对方暂时无法回复，请稍后重试）";
-
-      const agentMessage: Message = {
-        id: `${activeContact.id}-${Date.now()}-reply`,
-        sender: "agent",
-        content: replyContent,
-      };
-
-      setConversationState((prev) => {
-        const next = prev[activeContact.id] ? [...prev[activeContact.id]] : [];
-        next.push(agentMessage);
-        return { ...prev, [activeContact.id]: next };
-      });
-    } catch {
-      setConversationState((prev) => {
-        const next = prev[activeContact.id] ? [...prev[activeContact.id]] : [];
-        next.push({
-          id: `${activeContact.id}-${Date.now()}-reply`,
-          sender: "agent",
-          content: "（网络异常，请稍后重试）",
-        });
-        return { ...prev, [activeContact.id]: next };
-      });
-    } finally {
-      setIsChatLoading(false);
-    }
-  }, [chatInput, isChatLoading, activeContact, conversationState, builtProfile]);
 
   /* ── Profile handlers ── */
   const handleResumeFile = (file: File | null) => {
@@ -372,6 +235,38 @@ function AgentWorkbenchInner() {
       >
         合规提示：本工作台中由 AI 助手生成的回复均为「AI 代为表达」，非学长学姐本人直接发言；所有学长资料来源于本人主动填写或本人授权抓取的公开社媒画像。
       </div>
+
+      {/* ── Role banner (Phase 5.4) ── */}
+      {me?.role === "senior" ? (
+        <div
+          style={{
+            gridColumn: "1 / -1",
+            background: "rgba(0,0,0,0.03)",
+            border: "1px solid var(--border-default)",
+            borderRadius: 8,
+            padding: "0.8rem 1rem",
+            marginBottom: "1.5rem",
+          }}
+        >
+          <strong style={{ color: "var(--accent)" }}>学长视角:</strong>
+          你提取的画像会作为你 Agent 的 persona,在学弟向你提问时被注入到回答。
+        </div>
+      ) : me?.role === "junior" ? (
+        <div
+          style={{
+            gridColumn: "1 / -1",
+            background: "rgba(0,0,0,0.03)",
+            border: "1px solid var(--border-default)",
+            borderRadius: 8,
+            padding: "0.8rem 1rem",
+            marginBottom: "1.5rem",
+          }}
+        >
+          <strong style={{ color: "var(--accent)" }}>学弟视角:</strong>
+          你提取的画像用于在 /me/junior 推荐更匹配的学长。
+        </div>
+      ) : null}
+
       {/* ── Nav ── */}
       <aside className="workbench-nav">
         {navItems.map((item) => (
@@ -410,8 +305,8 @@ function AgentWorkbenchInner() {
                 }
                 onClick={() => {
                   setActiveMentorId(mentor.id);
-                  setActiveId(mentor.id);
-                  setActiveSection("match");
+                  // Plaza click now navigates to public senior page for chat creation
+                  window.location.href = `/seniors/${mentor.id}`;
                 }}
               >
                 <div className="plaza-card__media">
@@ -520,7 +415,7 @@ function AgentWorkbenchInner() {
             {builtProfile && (
               <section className="profile-section" style={{ background: "rgba(126, 205, 196, 0.05)", border: "1px solid var(--accent, #7ECDC4)", borderRadius: "8px", padding: "1rem" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
-                  <h3 style={{ margin: 0 }}>✅ 画像提取结果（已持久化，将注入"我的 Agent"对话）</h3>
+                  <h3 style={{ margin: 0 }}>✅ 画像提取结果（已持久化）</h3>
                   <button
                     type="button"
                     onClick={async () => {
@@ -553,84 +448,27 @@ function AgentWorkbenchInner() {
           </footer>
         </section>
       ) : (
-        /* ── Match / More (chat + contact list) ── */
-        <>
-          <section className="workbench-list">
-            <div className="workbench-list__header">
-              <h3>Agent / 联系人</h3>
-              <p>点击切换对话对象</p>
-            </div>
-            <div className="workbench-list__items">
-              {contacts.map((contact) => (
-                <button
-                  key={contact.id}
-                  className={contact.id === activeId ? "workbench-list__item is-active" : "workbench-list__item"}
-                  type="button"
-                  onClick={() => setActiveId(contact.id)}
-                >
-                  <span>{contact.name}</span>
-                  <small>{contact.meta}</small>
-                </button>
-              ))}
-            </div>
-          </section>
-
-          <section className="workbench-chat">
-            <header className="workbench-chat__profile">
-              <div>
-                <h2>{activeContact.name}</h2>
-                <p>{activeContact.meta}</p>
-              </div>
-              <span className="workbench-chat__tag">ACTIVE</span>
-            </header>
-
-            <div className="workbench-chat__messages">
-              {messages.length === 0 && !isChatLoading && (
-                <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", textAlign: "center", padding: "2rem" }}>
-                  {activeContact.isUserAgent
-                    ? "发送消息开始与你的 Agent 对话"
-                    : `向${activeContact.name}提问，获取基于真实经历的个性化建议`}
-                </p>
-              )}
-              {messages.map((message) => (
-                <div
-                  key={message.id}
-                  className={message.sender === "user" ? "workbench-chat__message is-user" : "workbench-chat__message"}
-                >
-                  <p>{message.content}</p>
-                </div>
-              ))}
-              {isChatLoading && (
-                <div className="workbench-chat__message typing-indicator" aria-label="对方正在输入">
-                  <span className="typing-dot" />
-                  <span className="typing-dot" />
-                  <span className="typing-dot" />
-                </div>
-              )}
-            </div>
-
-            <footer className="workbench-chat__actions">
-              {activeSection === "match" ? (
-                <div className="workbench-chat__composer">
-                  <input
-                    type="text"
-                    placeholder={isChatLoading ? "对方正在输入..." : "输入消息..."}
-                    value={chatInput}
-                    disabled={isChatLoading}
-                    onChange={(e) => setChatInput(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Enter") handleSendMessage(); }}
-                  />
-                  <button type="button" disabled={isChatLoading} onClick={handleSendMessage}>
-                    {isChatLoading ? "等待中" : "发送"}
-                  </button>
-                </div>
+        /* ── Match / More: chat panel removed; see /chat/[chatId] ── */
+        <section
+          className="workbench-chat"
+          style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "2rem", textAlign: "center" }}
+        >
+          <div>
+            <h2 style={{ marginBottom: "0.75rem" }}>对话功能已迁移</h2>
+            <p style={{ color: "var(--text-muted)", marginBottom: "1rem" }}>
+              和学长学姐的对话现在统一在独立的对话页中进行。
+            </p>
+            <p style={{ fontSize: "0.85rem" }}>
+              {me?.role === "junior" ? (
+                <a href="/me/junior">前往我的主页查看推荐学长 →</a>
+              ) : me?.role === "senior" ? (
+                <a href="/me/senior">前往我的主页查看收件箱 →</a>
               ) : (
-                <button className="workbench-chat__summary" type="button">一键总结</button>
+                <a href="/me">前往我的主页 →</a>
               )}
-              <button className="workbench-chat__fab" type="button" aria-label="新建对话">+</button>
-            </footer>
-          </section>
-        </>
+            </p>
+          </div>
+        </section>
       )}
 
       {/* ── Generation overlay ── */}
