@@ -2,27 +2,31 @@ import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 
+// SecondMe API 端点（参考: https://develop-docs.second.me/zh/docs/authentication/oauth2）
+// - Authorize page (浏览器跳转): https://go.second-me.cn/oauth/
+// - Token endpoints 走业务 API: https://api.mindverse.com/gate/lab/api/oauth/token/*
 const BASE_URL = process.env.SECONDME_BASE_URL || "https://api.mindverse.com/gate/lab";
+const AUTH_URL = process.env.SECONDME_AUTH_URL || "https://go.second-me.cn/oauth/";
 const CLIENT_ID = process.env.SECONDME_CLIENT_ID || "";
 const CLIENT_SECRET = process.env.SECONDME_CLIENT_SECRET || "";
 const REDIRECT_URI =
   process.env.SECONDME_REDIRECT_URI ||
   "http://localhost:3000/api/auth/secondme/callback";
-const SCOPES = (process.env.SECONDME_SCOPES || "userinfo,chat.write").split(",");
 
 export function isConfigured(): boolean {
   return Boolean(CLIENT_ID && CLIENT_SECRET);
 }
 
 export function buildAuthorizeUrl(state: string, mentorId: string): string {
+  // 官方文档显示 authorize 只接受 client_id / redirect_uri / response_type / state；
+  // scope 由控制台创建应用时预定，不在 URL 里传。
   const params = new URLSearchParams({
-    response_type: "code",
     client_id: CLIENT_ID,
     redirect_uri: REDIRECT_URI,
-    scope: SCOPES.join(" "),
+    response_type: "code",
     state: `${state}:${mentorId}`,
   });
-  return `${BASE_URL}/oauth2/authorize?${params.toString()}`;
+  return `${AUTH_URL}?${params.toString()}`;
 }
 
 export interface TokenResponse {
@@ -31,10 +35,23 @@ export interface TokenResponse {
   expires_in?: number;
   scope?: string;
   token_type?: string;
+  // 官方还可能返回 camelCase 字段，做向后兼容
+  accessToken?: string;
+  refreshToken?: string;
+  expiresIn?: number;
+}
+
+function normalizeToken(raw: TokenResponse): TokenResponse {
+  return {
+    ...raw,
+    access_token: raw.access_token ?? raw.accessToken ?? "",
+    refresh_token: raw.refresh_token ?? raw.refreshToken,
+    expires_in: raw.expires_in ?? raw.expiresIn,
+  };
 }
 
 export async function exchangeCodeForToken(code: string): Promise<TokenResponse> {
-  const res = await fetch(`${BASE_URL}/oauth2/token`, {
+  const res = await fetch(`${BASE_URL}/api/oauth/token/code`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -48,7 +65,24 @@ export async function exchangeCodeForToken(code: string): Promise<TokenResponse>
   if (!res.ok) {
     throw new Error(`SecondMe token exchange failed: ${res.status} ${await res.text()}`);
   }
-  return (await res.json()) as TokenResponse;
+  return normalizeToken((await res.json()) as TokenResponse);
+}
+
+export async function refreshAccessToken(refreshToken: string): Promise<TokenResponse> {
+  const res = await fetch(`${BASE_URL}/api/oauth/token/refresh`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+      client_id: CLIENT_ID,
+      client_secret: CLIENT_SECRET,
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(`SecondMe token refresh failed: ${res.status} ${await res.text()}`);
+  }
+  return normalizeToken((await res.json()) as TokenResponse);
 }
 
 export interface UserInfo {
@@ -58,15 +92,37 @@ export interface UserInfo {
   bio?: string;
 }
 
+// /auth/me 是轻量接口，token 拿到后第一步先调用以获得 appScopedUserId。
+// 然后再调 /secondme/user/info 拿姓名等业务字段（需要 userinfo scope）。
 export async function fetchUserInfo(accessToken: string): Promise<UserInfo> {
-  const res = await fetch(`${BASE_URL}/api/secondme/user/info`, {
+  // 1) 先 /auth/me 拿稳定的 userId
+  const meRes = await fetch(`${BASE_URL}/api/auth/me`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
-  if (!res.ok) {
-    throw new Error(`SecondMe user/info failed: ${res.status}`);
+  if (!meRes.ok) {
+    throw new Error(`SecondMe /auth/me failed: ${meRes.status} ${await meRes.text()}`);
   }
-  const json = (await res.json()) as { code: number; data: UserInfo };
-  return json.data;
+  const meJson = (await meRes.json()) as {
+    code?: number;
+    data?: { appScopedUserId?: string; userId?: string };
+  };
+  const userId =
+    meJson.data?.appScopedUserId ?? meJson.data?.userId ?? "unknown";
+
+  // 2) 再尝试 /secondme/user/info 拿姓名头像（userinfo scope 必需；失败不阻塞）
+  try {
+    const infoRes = await fetch(`${BASE_URL}/api/secondme/user/info`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (infoRes.ok) {
+      const j = (await infoRes.json()) as { code: number; data: UserInfo };
+      return { ...j.data, userId: userId || j.data.userId };
+    }
+  } catch {
+    // 忽略：可能未授权 userinfo scope
+  }
+
+  return { userId, name: userId };
 }
 
 export type ChatChunkHandler = (delta: string) => void | Promise<void>;
