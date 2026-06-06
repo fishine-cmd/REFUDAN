@@ -5,13 +5,11 @@ import {
   createUser,
   setSessionCookie,
 } from "@/lib/auth";
-import { ensureSeeded } from "@/lib/db";
-import { toPublicUser } from "@/lib/db";
+import { toPublicUser } from "@/lib/users-redis";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
-  await ensureSeeded();
   let body: { username?: unknown; password?: unknown; role?: unknown; displayName?: unknown };
   try {
     body = await request.json();

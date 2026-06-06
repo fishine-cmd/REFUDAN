@@ -6,12 +6,11 @@ import {
   validateUsername,
   verifyPassword,
 } from "@/lib/auth";
-import { ensureSeeded, toPublicUser } from "@/lib/db";
+import { toPublicUser } from "@/lib/users-redis";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
-  await ensureSeeded();
   let body: { username?: unknown; password?: unknown };
   try {
     body = await request.json();
