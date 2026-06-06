@@ -3,8 +3,12 @@ import { loadMentor } from "@/data/mentors";
 import { getMentorToken, streamChat as secondmeStreamChat } from "@/lib/secondme";
 
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
-const DEEPSEEK_BASE_URL =
-  process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com/v1";
+// Base URL must NOT include /v1 — the route appends it. This matches the
+// convention used by services/profile-extraction/llm_client.py so a single
+// .env.local DEEPSEEK_BASE_URL works for both backends.
+const DEEPSEEK_BASE_URL = (
+  process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com"
+).replace(/\/+$/, "").replace(/\/v1$/, "");
 
 interface Persona {
   name: string;
@@ -179,7 +183,7 @@ export async function POST(request: Request) {
 
   try {
     const response = await fetch(
-      `${DEEPSEEK_BASE_URL}/chat/completions`,
+      `${DEEPSEEK_BASE_URL}/v1/chat/completions`,
       {
         method: "POST",
         headers: {
