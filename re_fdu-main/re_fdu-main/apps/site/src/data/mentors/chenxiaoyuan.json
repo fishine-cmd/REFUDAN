@@ -7,6 +7,7 @@
   "consent_granted_at": "2026-06-06",
   "data_source": "authorized_self_report",
   "secondme_user_id": null,
+  "demo_binding_note": "中期演示阶段绑定项目方 SecondMe 账号，用于验证 OAuth2 + 流式对话技术链路；正式上线由本人独立完成相同授权",
   "scores": [92, 88, 86, 79],
   "tags": ["同届竞赛", "NLP", "夏令营"],
   "badges": ["资料齐全", "高匹配"],

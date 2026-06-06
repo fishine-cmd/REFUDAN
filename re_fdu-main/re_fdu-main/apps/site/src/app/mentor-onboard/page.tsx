@@ -10,6 +10,7 @@ type MentorStatus = {
   secondme_linked: boolean;
   secondme_user_id: string | null;
   granted_at: string | null;
+  demo_binding_note?: string;
 };
 
 type StatusResponse = {
@@ -156,6 +157,13 @@ function MentorOnboardInner() {
                   </dl>
                 )}
 
+                {linked && m.demo_binding_note && (
+                  <div className="onboard-card__demo">
+                    <strong>⚠ 演示绑定</strong>
+                    <p>{m.demo_binding_note}</p>
+                  </div>
+                )}
+
                 <div className="onboard-card__actions">
                   {!linked ? (
                     <a
@@ -248,6 +256,16 @@ function MentorOnboardInner() {
         }
         .onboard-card__meta dt { color: var(--text-muted); font-size: 0.7rem; }
         .onboard-card__meta dd { margin: 0; font-family: ui-monospace, monospace; }
+        .onboard-card__demo {
+          border-left: 3px solid rgb(251, 146, 60);
+          background: rgba(251, 146, 60, 0.08);
+          padding: 0.55rem 0.75rem;
+          font-size: 0.72rem;
+          color: var(--text-body);
+          border-radius: 4px;
+        }
+        .onboard-card__demo strong { color: rgb(251, 146, 60); display: block; margin-bottom: 0.2rem; }
+        .onboard-card__demo p { margin: 0; line-height: 1.45; }
         .onboard-card__actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
         .onboard-card__actions .minimal-primary,
         .onboard-card__actions .minimal-secondary {

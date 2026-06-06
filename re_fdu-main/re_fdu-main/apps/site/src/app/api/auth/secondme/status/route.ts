@@ -13,6 +13,7 @@ export async function GET() {
       secondme_linked: tok !== null,
       secondme_user_id: tok?.secondmeUserId ?? null,
       granted_at: tok?.grantedAt ?? null,
+      demo_binding_note: m.demo_binding_note,
     };
   });
   return NextResponse.json({
