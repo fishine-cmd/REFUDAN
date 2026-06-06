@@ -1,26 +1,17 @@
-import { NextResponse } from "next/server";
-import { ensureSeeded, listUsersByRole, toPublicUser } from "@/lib/db";
-
+// Deprecated:5.2-5.3 期间的薄 alias,内部转发 /api/seniors。
+// 5.4 删除前端 /mentors 页面同时删除本路由。
 export const runtime = "nodejs";
 
-export async function GET() {
-  await ensureSeeded();
-  const rows = listUsersByRole("senior");
-  // 保留 MentorSummary 形状(id, name, title, avatar, scores, tags, badges, highlight, meta)
-  // 给现有 mentors 页面 + agent-workbench 用,避免前端大改
-  const mentors = rows.map((row) => {
-    const pub = toPublicUser(row);
-    return {
-      id: pub.id,
-      name: pub.displayName,
-      title: pub.title ?? "",
-      avatar: pub.avatar,
-      scores: pub.scores ?? [0, 0, 0, 0],
-      tags: pub.tags ?? [],
-      badges: pub.badges ?? [],
-      highlight: pub.highlight ?? "",
-      meta: pub.title ?? "",
-    };
+import { NextRequest, NextResponse } from "next/server";
+
+export async function GET(req: NextRequest) {
+  const url = new URL("/api/seniors", req.url);
+  const r = await fetch(url, {
+    headers: req.headers,
+    cache: "no-store",
   });
-  return NextResponse.json({ mentors });
+  return new NextResponse(r.body, {
+    status: r.status,
+    headers: r.headers,
+  });
 }
