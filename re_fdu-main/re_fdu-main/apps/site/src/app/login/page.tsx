@@ -25,7 +25,7 @@ export default function LoginPage() {
         setBusy(false);
         return;
       }
-      window.location.href = "/";
+      window.location.href = "/me";
     } catch (err) {
       setError(`Network error: ${String(err)}`);
       setBusy(false);

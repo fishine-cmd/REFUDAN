@@ -33,7 +33,7 @@ function SignupForm() {
         setBusy(false);
         return;
       }
-      window.location.href = "/";
+      window.location.href = "/me";
     } catch (err) {
       setError(`Network error: ${String(err)}`);
       setBusy(false);
