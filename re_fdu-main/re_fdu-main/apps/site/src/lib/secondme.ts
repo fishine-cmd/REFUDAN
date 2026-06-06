@@ -35,18 +35,33 @@ export interface TokenResponse {
   expires_in?: number;
   scope?: string;
   token_type?: string;
-  // 官方还可能返回 camelCase 字段，做向后兼容
-  accessToken?: string;
-  refreshToken?: string;
-  expiresIn?: number;
 }
 
-function normalizeToken(raw: TokenResponse): TokenResponse {
+// SecondMe 实际可能返回 snake_case、camelCase，或者用 { code, data: {...} } 包装
+function normalizeToken(raw: unknown): TokenResponse {
+  const obj = (raw ?? {}) as Record<string, unknown>;
+  const data = (obj.data ?? obj) as Record<string, unknown>;
+  const pick = (...keys: string[]): string | undefined => {
+    for (const k of keys) {
+      const v = data[k] ?? obj[k];
+      if (typeof v === "string" && v.length > 0) return v;
+    }
+    return undefined;
+  };
+  const pickNum = (...keys: string[]): number | undefined => {
+    for (const k of keys) {
+      const v = data[k] ?? obj[k];
+      if (typeof v === "number") return v;
+    }
+    return undefined;
+  };
   return {
-    ...raw,
-    access_token: raw.access_token ?? raw.accessToken ?? "",
-    refresh_token: raw.refresh_token ?? raw.refreshToken,
-    expires_in: raw.expires_in ?? raw.expiresIn,
+    access_token:
+      pick("access_token", "accessToken", "token", "at") ?? "",
+    refresh_token: pick("refresh_token", "refreshToken", "rt"),
+    expires_in: pickNum("expires_in", "expiresIn"),
+    scope: pick("scope", "scopes"),
+    token_type: pick("token_type", "tokenType"),
   };
 }
 
@@ -62,10 +77,24 @@ export async function exchangeCodeForToken(code: string): Promise<TokenResponse>
       client_secret: CLIENT_SECRET,
     }),
   });
+  const rawText = await res.text();
   if (!res.ok) {
-    throw new Error(`SecondMe token exchange failed: ${res.status} ${await res.text()}`);
+    throw new Error(`SecondMe token exchange failed: ${res.status} ${rawText}`);
   }
-  return normalizeToken((await res.json()) as TokenResponse);
+  let raw: unknown;
+  try {
+    raw = JSON.parse(rawText);
+  } catch {
+    throw new Error(`SecondMe token endpoint returned non-JSON: ${rawText.slice(0, 500)}`);
+  }
+  console.log("[secondme] /api/oauth/token/code raw response:", JSON.stringify(raw));
+  const token = normalizeToken(raw);
+  if (!token.access_token) {
+    throw new Error(
+      `SecondMe token exchange returned no access_token. Raw: ${JSON.stringify(raw).slice(0, 500)}`,
+    );
+  }
+  return token;
 }
 
 export async function refreshAccessToken(refreshToken: string): Promise<TokenResponse> {
@@ -82,7 +111,7 @@ export async function refreshAccessToken(refreshToken: string): Promise<TokenRes
   if (!res.ok) {
     throw new Error(`SecondMe token refresh failed: ${res.status} ${await res.text()}`);
   }
-  return normalizeToken((await res.json()) as TokenResponse);
+  return normalizeToken(await res.json());
 }
 
 export interface UserInfo {
@@ -150,38 +179,86 @@ export async function streamChat(
     body: JSON.stringify({ message }),
     signal: AbortSignal.timeout(60_000),
   });
+  console.log(
+    "[secondme] chat/stream status:",
+    res.status,
+    "content-type:",
+    res.headers.get("content-type"),
+  );
   if (!res.ok || !res.body) {
-    throw new Error(`SecondMe chat/stream failed: ${res.status}`);
+    const errText = await res.text().catch(() => "");
+    throw new Error(`SecondMe chat/stream failed: ${res.status} ${errText}`);
   }
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buf = "";
   let sessionId: string | undefined;
+  let rawDump = "";
+  let chunkCount = 0;
+
+  // 提取一个 JSON payload 里的 content delta（兼容多种字段命名）
+  function extractDelta(json: Record<string, unknown>): string | undefined {
+    const choices = json.choices as
+      | { delta?: { content?: string }; message?: { content?: string } }[]
+      | undefined;
+    const fromChoice =
+      choices?.[0]?.delta?.content ?? choices?.[0]?.message?.content;
+    if (fromChoice) return fromChoice;
+    // 备用字段
+    const data = json.data as Record<string, unknown> | undefined;
+    return (
+      (json.content as string | undefined) ??
+      (json.delta as string | undefined) ??
+      (json.message as string | undefined) ??
+      (data?.content as string | undefined) ??
+      (data?.delta as string | undefined)
+    );
+  }
 
   while (true) {
     const { value, done } = await reader.read();
     if (done) break;
-    buf += decoder.decode(value, { stream: true });
-    const lines = buf.split("\n");
+    const text = decoder.decode(value, { stream: true });
+    rawDump += text;
+    buf += text;
+    const lines = buf.split(/\r?\n/);
     buf = lines.pop() ?? "";
     for (const line of lines) {
       const trimmed = line.trim();
-      if (!trimmed.startsWith("data:")) continue;
-      const payload = trimmed.slice(5).trim();
-      if (payload === "[DONE]") return { sessionId };
+      if (!trimmed) continue;
+      // 支持 `data: xxx` 和 `data:xxx` 两种格式；也支持纯 JSON 行（NDJSON）
+      let payload = trimmed;
+      if (trimmed.startsWith("data:")) {
+        payload = trimmed.slice(5).trim();
+      } else if (trimmed.startsWith("event:") || trimmed.startsWith(":")) {
+        continue;
+      }
+      if (payload === "[DONE]" || payload === "data: [DONE]") {
+        console.log("[secondme] chunks emitted:", chunkCount);
+        return { sessionId };
+      }
       try {
-        const json = JSON.parse(payload) as {
-          sessionId?: string;
-          choices?: { delta?: { content?: string } }[];
-        };
-        if (json.sessionId) sessionId = json.sessionId;
-        const delta = json.choices?.[0]?.delta?.content;
-        if (delta) await onChunk(delta);
+        const json = JSON.parse(payload) as Record<string, unknown>;
+        if (json.sessionId) sessionId = json.sessionId as string;
+        const delta = extractDelta(json);
+        if (delta) {
+          chunkCount += 1;
+          await onChunk(delta);
+        }
       } catch {
-        // skip non-JSON lines
+        // 不是 JSON 就忽略
       }
     }
+  }
+
+  console.log("[secondme] chunks emitted:", chunkCount);
+  if (chunkCount === 0) {
+    // 第一次失败时把原始响应贴到日志里（限长），便于诊断字段格式
+    console.log(
+      "[secondme] raw response (first 1500 chars):",
+      rawDump.slice(0, 1500),
+    );
   }
   return { sessionId };
 }
