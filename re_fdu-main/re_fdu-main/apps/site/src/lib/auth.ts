@@ -1,10 +1,12 @@
-// Auth primitives. Argon2 password hashing via Bun.password, server-side
-// sessions in SQLite, HttpOnly cookies, sliding 7-day expiration.
+// Auth primitives. Uses node:crypto.scrypt for password hashing (no native
+// build deps required; fast and secure). Server-side sessions in SQLite,
+// HttpOnly cookies, sliding 7-day expiration.
 //
 // Routes that use this MUST set `export const runtime = "nodejs"` so
-// bun:sqlite is available.
+// node:sqlite and node:crypto are available.
 
-import crypto from "node:crypto";
+import { randomBytes, scrypt, timingSafeEqual } from "node:crypto";
+import { promisify } from "node:util";
 import { cookies } from "next/headers";
 import {
   findUserById,
@@ -18,17 +20,33 @@ import {
 const SESSION_COOKIE = "refudan_session";
 const SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
 
+const scryptAsync = promisify(scrypt) as (
+  password: string | Buffer,
+  salt: string | Buffer,
+  keylen: number,
+) => Promise<Buffer>;
+
 // ────────────────────────────────────────────────────────────────────────
-// Hashing
+// Hashing (scrypt: salt_hex:derived_hex)
 // ────────────────────────────────────────────────────────────────────────
+
+const KEYLEN = 64;
 
 export async function hashPassword(plain: string): Promise<string> {
-  return Bun.password.hash(plain, "argon2id");
+  const salt = randomBytes(16).toString("hex");
+  const derived = await scryptAsync(plain, salt, KEYLEN);
+  return `${salt}:${derived.toString("hex")}`;
 }
 
-export async function verifyPassword(plain: string, hash: string): Promise<boolean> {
+export async function verifyPassword(plain: string, stored: string): Promise<boolean> {
   try {
-    return await Bun.password.verify(plain, hash);
+    const sep = stored.indexOf(":");
+    if (sep < 0) return false;
+    const salt = stored.slice(0, sep);
+    const expected = Buffer.from(stored.slice(sep + 1), "hex");
+    const derived = await scryptAsync(plain, salt, expected.length);
+    if (derived.length !== expected.length) return false;
+    return timingSafeEqual(derived, expected);
   } catch {
     return false;
   }
@@ -39,7 +57,7 @@ export async function verifyPassword(plain: string, hash: string): Promise<boole
 // ────────────────────────────────────────────────────────────────────────
 
 export function createSession(userId: string): string {
-  const token = crypto.randomBytes(32).toString("hex");
+  const token = randomBytes(32).toString("hex");
   const now = Date.now();
   const expiresAt = now + SESSION_MAX_AGE_SECONDS * 1000;
   getDb().prepare(
@@ -62,9 +80,9 @@ export function touchSession(token: string): void {
 
 export function findUserBySessionToken(token: string): UserRow | null {
   const db = getDb();
-  const session = db.query<{ user_id: string; expires_at: number }, [string]>(
+  const session = db.prepare(
     "SELECT user_id, expires_at FROM sessions WHERE token = ?",
-  ).get(token);
+  ).get(token) as { user_id: string; expires_at: number } | undefined;
   if (!session) return null;
   if (session.expires_at < Date.now()) {
     db.prepare("DELETE FROM sessions WHERE token = ?").run(token);
@@ -188,7 +206,7 @@ export async function createUser(input: {
   }
 
   const passwordHash = await hashPassword(password);
-  const id = crypto.randomUUID();
+  const id = randomBytes(16).toString("hex");
   const now = Date.now();
 
   getDb().prepare(`

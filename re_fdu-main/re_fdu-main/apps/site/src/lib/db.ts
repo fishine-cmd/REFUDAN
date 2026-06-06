@@ -1,20 +1,23 @@
-// schoolmate-style: SQLite via Bun's built-in driver. Singleton, idempotent
-// schema, idempotent seed. All API routes that import this MUST opt out of the
-// Edge runtime via `export const runtime = "nodejs"` because bun:sqlite is not
-// available in Edge.
+// SQLite via Node 22+ built-in `node:sqlite`. Stable enough on Node 24+, emits
+// only an experimental warning on Node 22/23 (suppressed by setting
+// NODE_NO_WARNINGS=1 if it bothers anyone). No native compile needed.
+// All API routes that import this MUST opt out of the Edge runtime via
+// `export const runtime = "nodejs"`.
 
-import { Database } from "bun:sqlite";
+import { DatabaseSync, type StatementSync } from "node:sqlite";
 import fs from "node:fs";
 import path from "node:path";
 
+import { hashPassword } from "./auth";
+
 const DB_PATH = path.join(process.cwd(), "data", "users.db");
 
-let _db: Database | null = null;
+let _db: DatabaseSync | null = null;
 let _seedPromise: Promise<void> | null = null;
 
-function open(): Database {
+function open(): DatabaseSync {
   fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
-  const db = new Database(DB_PATH);
+  const db = new DatabaseSync(DB_PATH);
   db.exec("PRAGMA journal_mode = WAL;");
   db.exec("PRAGMA foreign_keys = ON;");
   return db;
@@ -55,7 +58,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
 `;
 
-export function getDb(): Database {
+export function getDb(): DatabaseSync {
   if (_db) return _db;
   _db = open();
   _db.exec(SCHEMA);
@@ -67,16 +70,16 @@ export async function ensureSeeded(): Promise<void> {
   if (_seedPromise) return _seedPromise;
   _seedPromise = (async () => {
     const db = getDb();
-    const row = db.query<{ count: number }, []>(
+    const row = db.prepare(
       "SELECT COUNT(*) as count FROM users WHERE role='senior'",
-    ).get();
+    ).get() as { count: number } | undefined;
     if (row && row.count > 0) return;
 
     const mentorsDir = path.join(process.cwd(), "src", "data", "mentors");
     if (!fs.existsSync(mentorsDir)) return;
 
     const files = fs.readdirSync(mentorsDir).filter((f) => f.endsWith(".json"));
-    const defaultPasswordHash = await Bun.password.hash("demo123", "argon2id");
+    const defaultPasswordHash = await hashPassword("demo123");
 
     const insert = db.prepare(`
       INSERT INTO users (
@@ -181,28 +184,28 @@ export function toPublicUser(row: UserRow): PublicUser {
   return base;
 }
 
+function getStmt(sql: string): StatementSync {
+  return getDb().prepare(sql);
+}
+
 export function findUserById(id: string): UserRow | null {
-  const db = getDb();
-  return db.query<UserRow, [string]>("SELECT * FROM users WHERE id = ?").get(id);
+  return (getStmt("SELECT * FROM users WHERE id = ?").get(id) as unknown as UserRow) ?? null;
 }
 
 export function findUserByUsername(username: string): UserRow | null {
-  const db = getDb();
-  return db.query<UserRow, [string]>("SELECT * FROM users WHERE username = ?").get(
-    username.toLowerCase(),
-  );
+  return (
+    getStmt("SELECT * FROM users WHERE username = ?").get(username.toLowerCase()) as unknown as UserRow
+  ) ?? null;
 }
 
 export function listUsersByRole(role: "senior" | "junior"): UserRow[] {
-  const db = getDb();
-  return db.query<UserRow, [string]>(
+  return getStmt(
     "SELECT * FROM users WHERE role = ? ORDER BY created_at",
-  ).all(role);
+  ).all(role) as unknown as UserRow[];
 }
 
 export function updateUserBuiltProfile(userId: string, builtProfile: unknown | null): void {
-  const db = getDb();
-  db.prepare("UPDATE users SET built_profile_json = ? WHERE id = ?").run(
+  getDb().prepare("UPDATE users SET built_profile_json = ? WHERE id = ?").run(
     builtProfile === null ? null : JSON.stringify(builtProfile),
     userId,
   );
