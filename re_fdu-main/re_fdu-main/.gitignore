@@ -6,3 +6,8 @@ coverage
 .turbo
 .env
 .env.*
+!.env.example
+tsconfig.tsbuildinfo
+
+# 本地 OAuth2 token 落地（demo 用，禁止提交）
+mentor_tokens.json
