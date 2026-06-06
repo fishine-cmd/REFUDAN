@@ -425,3 +425,35 @@
 }
 .me-chatlist li a strong { color: var(--accent); }
 .me-chatlist time { color: var(--text-muted); font-size: 0.75rem; text-align: right; }
+
+.me-inbox {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.me-inbox li {
+  border-bottom: 1px solid var(--border-default);
+}
+.me-inbox li:last-child { border-bottom: 0; }
+.me-inbox li a {
+  display: grid;
+  grid-template-columns: 16px 140px 1fr 160px;
+  gap: 0.8rem;
+  padding: 0.9rem 1rem;
+  align-items: center;
+  text-decoration: none;
+  color: inherit;
+}
+.me-inbox-unread { background: rgba(0,0,0,0.03); }
+.me-inbox-unread strong { color: var(--accent); }
+.me-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: transparent;
+}
+.me-dot-on { background: var(--accent); }
+.me-inbox time { color: var(--text-muted); font-size: 0.75rem; text-align: right; }
