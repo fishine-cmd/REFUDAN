@@ -43,6 +43,9 @@ export default function RootLayout({
               <a className="frame__button" href="/mentors">
                 Mentors
               </a>
+              <a className="frame__button" href="/mentor-onboard">
+                Onboard
+              </a>
             </div>
             <div className="frame__theme">
               <span>Theme</span>

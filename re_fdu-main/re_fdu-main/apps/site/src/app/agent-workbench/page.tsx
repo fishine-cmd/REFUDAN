@@ -283,6 +283,19 @@ function AgentWorkbenchInner() {
      ═══════════════════════════════════════════════════════════════ */
   return (
     <main className={activeSection === "profile" ? "workbench workbench--profile" : "workbench"}>
+      <div
+        style={{
+          gridColumn: "1 / -1",
+          padding: "0.4rem 0.75rem",
+          fontSize: "0.7rem",
+          color: "var(--text-muted)",
+          borderBottom: "1px solid var(--border-default)",
+          background: "rgba(148, 163, 184, 0.05)",
+          textAlign: "center",
+        }}
+      >
+        合规提示：本工作台中由 SecondMe 分身或兜底 LLM 生成的回复均为「AI 助手代为表达」，非学长学姐本人直接发言；所有学长资料来源于本人主动填写或本人授权的 SecondMe 分身调用。
+      </div>
       {/* ── Nav ── */}
       <aside className="workbench-nav">
         {navItems.map((item) => (
