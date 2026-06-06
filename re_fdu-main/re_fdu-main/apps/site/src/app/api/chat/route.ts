@@ -61,48 +61,37 @@ function extractKeyExperiences(profile: Record<string, unknown>): string {
   return parts.join("\n");
 }
 
-function secondmeChatResponse(
+async function secondmeChatResponse(
   accessToken: string,
   messages: { role: string; content: string }[],
   mentorId: string,
-): Response {
+): Promise<Response> {
   // SecondMe chat/stream 只接受单条 message，取最后一条 user 输入
   const lastUser = [...messages].reverse().find((m) => m.role === "user");
   const userMessage = lastUser?.content ?? "";
 
-  const encoder = new TextEncoder();
-  const stream = new ReadableStream({
-    async start(controller) {
-      controller.enqueue(
-        encoder.encode(
-          `data: ${JSON.stringify({ source: "secondme", mentorId })}\n\n`,
-        ),
-      );
-      try {
-        await secondmeStreamChat(accessToken, userMessage, (delta) => {
-          controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify({ delta })}\n\n`),
-          );
-        });
-        controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
-      } catch (e) {
-        const message = e instanceof Error ? e.message : "Unknown error";
-        controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify({ error: message })}\n\n`),
-        );
-      } finally {
-        controller.close();
-      }
-    },
-  });
+  let collected = "";
+  try {
+    await secondmeStreamChat(accessToken, userMessage, (delta) => {
+      collected += delta;
+    });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Unknown error";
+    console.error("SecondMe streamChat failed:", message);
+    return NextResponse.json(
+      {
+        error: `SecondMe 分身响应失败：${message}`,
+        source: "secondme",
+        mentorId,
+      },
+      { status: 502 },
+    );
+  }
 
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
-      "X-RE-FUDAN-Source": "secondme",
-    },
+  return NextResponse.json({
+    reply: collected || "（SecondMe 分身未返回内容）",
+    source: "secondme",
+    mentorId,
   });
 }
 
@@ -134,7 +123,7 @@ export async function POST(request: Request) {
     if (profile?.consent_status === "granted") {
       const token = getMentorToken(mentorId);
       if (token) {
-        return secondmeChatResponse(token.accessToken, messages, mentorId);
+        return await secondmeChatResponse(token.accessToken, messages, mentorId);
       }
     }
   }

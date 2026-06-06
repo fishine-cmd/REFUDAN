@@ -102,12 +102,17 @@ export async function fetchUserInfo(accessToken: string): Promise<UserInfo> {
   if (!meRes.ok) {
     throw new Error(`SecondMe /auth/me failed: ${meRes.status} ${await meRes.text()}`);
   }
-  const meJson = (await meRes.json()) as {
-    code?: number;
-    data?: { appScopedUserId?: string; userId?: string };
-  };
+  const meJson = (await meRes.json()) as Record<string, unknown>;
+  console.log("[secondme] /auth/me response:", JSON.stringify(meJson));
+
+  // 容错：字段可能在顶层、在 data 下、用 appScopedUserId 或 userId 命名
+  const data = (meJson.data ?? meJson) as Record<string, unknown>;
   const userId =
-    meJson.data?.appScopedUserId ?? meJson.data?.userId ?? "unknown";
+    (data.appScopedUserId as string | undefined) ??
+    (data.userId as string | undefined) ??
+    (meJson.appScopedUserId as string | undefined) ??
+    (meJson.userId as string | undefined) ??
+    "";
 
   // 2) 再尝试 /secondme/user/info 拿姓名头像（userinfo scope 必需；失败不阻塞）
   try {
@@ -115,14 +120,18 @@ export async function fetchUserInfo(accessToken: string): Promise<UserInfo> {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (infoRes.ok) {
-      const j = (await infoRes.json()) as { code: number; data: UserInfo };
-      return { ...j.data, userId: userId || j.data.userId };
+      const j = (await infoRes.json()) as Record<string, unknown>;
+      console.log("[secondme] /secondme/user/info response:", JSON.stringify(j));
+      const info = (j.data ?? j) as UserInfo;
+      return { ...info, userId: userId || info.userId || "unknown" };
+    } else {
+      console.warn("[secondme] /secondme/user/info failed:", infoRes.status);
     }
-  } catch {
-    // 忽略：可能未授权 userinfo scope
+  } catch (e) {
+    console.warn("[secondme] /secondme/user/info threw:", e);
   }
 
-  return { userId, name: userId };
+  return { userId: userId || "unknown", name: userId || "SecondMe user" };
 }
 
 export type ChatChunkHandler = (delta: string) => void | Promise<void>;
