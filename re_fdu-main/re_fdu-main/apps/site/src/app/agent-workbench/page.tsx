@@ -173,6 +173,7 @@ function AgentWorkbenchInner() {
         id: `agent-${Date.now()}`,
         name: "新生成 Agent",
         meta: "已就绪 · 可开始匹配",
+        isUserAgent: true,
       };
       setContacts((prev) => [selfContact, newAgent, ...prev.slice(1)]);
       setActiveId(newAgent.id);
