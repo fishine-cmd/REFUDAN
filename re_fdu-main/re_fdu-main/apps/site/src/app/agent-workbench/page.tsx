@@ -49,9 +49,10 @@ const selfContact: Contact = {
 const axes = ["院校匹配", "专业匹配", "目标重合", "经历相似"] as const;
 
 const generationSteps = [
-  "正在解析你的简历...",
-  "提取关键经历...",
-  "构建你的数字分身...",
+  "正在采集平台数据...",
+  "AI 正在分析内容...",
+  "正在合成个人画像...",
+  "存储档案中...",
 ];
 
 const privacyOptions = ["公开", "握手后可见", "仅本人确认后可见"] as const;
@@ -113,6 +114,20 @@ function AgentWorkbenchInner() {
     { id: "k3", title: "AI 对话记录 - 科研讨论", source: "历史导入", privacy: "仅本人确认后可见" },
   ]);
 
+  /* ── Platform account binding ── */
+  const [xhsId, setXhsId] = useState("");
+  const [githubUser, setGithubUser] = useState("");
+  const [linkedinUrl, setLinkedinUrl] = useState("");
+  const [zhihuId, setZhihuId] = useState("");
+
+  /* ── Pipeline results ── */
+  const [builtProfile, setBuiltProfile] = useState<Record<string, unknown> | null>(null);
+  const [isPipelineRunning, setIsPipelineRunning] = useState(false);
+
+  /* ── Matching search ── */
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<Record<string, unknown>[]>([]);
+
   /* ── Load mentors ── */
   useEffect(() => {
     fetch("/api/mentors")
@@ -152,29 +167,71 @@ function AgentWorkbenchInner() {
   );
   const messages = conversationState[activeContact.id] ?? [];
 
-  /* ── Agent generation simulation ── */
+  /* ── Agent generation (real API) ── */
   useEffect(() => {
     if (!isGenerating) return;
     setGenerationStep(0);
     const interval = window.setInterval(() => {
       setGenerationStep((prev) => Math.min(prev + 1, generationSteps.length - 1));
-    }, 1000);
-    const timeout = window.setTimeout(() => {
-      setIsGenerating(false);
-      const newAgent: Contact = {
-        id: `agent-${Date.now()}`,
-        name: "新生成 Agent",
-        meta: "已就绪 · 可开始匹配",
-      };
-      setContacts((prev) => [selfContact, newAgent, ...prev.slice(1)]);
-      setActiveId(newAgent.id);
-      setActiveSection("match");
-    }, 3000);
-    return () => {
-      window.clearInterval(interval);
-      window.clearTimeout(timeout);
-    };
+    }, 3000); // Slower cycle for real pipeline (~3s per step)
+    return () => window.clearInterval(interval);
   }, [isGenerating]);
+
+  const handleGenerate = async () => {
+    if (!validateProfile()) return;
+    setIsGenerating(true);
+
+    // Collect non-empty platform accounts
+    const accounts: string[] = [];
+    if (xhsId.trim()) accounts.push(xhsId.trim());
+    if (githubUser.trim()) accounts.push(`github:${githubUser.trim()}`);
+    if (linkedinUrl.trim()) accounts.push(linkedinUrl.trim());
+    if (zhihuId.trim()) accounts.push(zhihuId.trim());
+
+    // If no platform accounts, just simulate existing behavior
+    if (accounts.length === 0) {
+      window.setTimeout(() => {
+        setIsGenerating(false);
+      }, 3000);
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/profile/build", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accounts,
+          displayName: `${school} ${major} ${goal}`.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.profile) {
+        setBuiltProfile(data.profile);
+        setGenerationStep(generationSteps.length - 1);
+      } else {
+        setErrors((prev) => [...prev, data.error ?? "Profile build failed"]);
+      }
+    } catch (err) {
+      setErrors((prev) => [...prev, `Network error: ${String(err)}`]);
+    } finally {
+      window.setTimeout(() => setIsGenerating(false), 800);
+    }
+  };
+
+  /* ── Profile search ── */
+  const handleSearch = useCallback(async () => {
+    if (!searchQuery.trim()) return;
+    try {
+      const params = new URLSearchParams({ q: searchQuery.trim() });
+      const res = await fetch(`/api/profile/search?${params}`);
+      if (!res.ok) throw new Error("Search failed");
+      const data = await res.json();
+      setSearchResults((data.results as Record<string, unknown>[]) ?? []);
+    } catch (err) {
+      console.error("Search error:", err);
+    }
+  }, [searchQuery]);
 
   /* ── Chat: send message ── */
   const handleSendMessage = useCallback(async () => {
@@ -395,6 +452,32 @@ function AgentWorkbenchInner() {
               </div>
             </section>
             <section className="profile-section">
+              <h3>平台账号绑定</h3>
+              <p className="profile-hint">绑定您的社交媒体与开发者账号，AI 自动提取兴趣、技能与沟通风格</p>
+              <div className="profile-grid">
+                <label className="profile-field">小红书 ID <input value={xhsId} onChange={(e) => setXhsId(e.target.value)} placeholder="纯数字 ID，例如 193190562" /></label>
+                <label className="profile-field">GitHub <input value={githubUser} onChange={(e) => setGithubUser(e.target.value)} placeholder="用户名或完整 URL" /></label>
+                <label className="profile-field">LinkedIn <input value={linkedinUrl} onChange={(e) => setLinkedinUrl(e.target.value)} placeholder="公开主页 URL" /></label>
+                <label className="profile-field">知乎 <input value={zhihuId} onChange={(e) => setZhihuId(e.target.value)} placeholder="用户名或个人页 URL" /></label>
+              </div>
+            </section>
+            {builtProfile && (
+              <section className="profile-section">
+                <h3>AI 提取的画像</h3>
+                <div className="profile-knowledge">
+                  <div className="profile-knowledge__row">
+                    <div><strong>置信度</strong><span>{String(builtProfile.confidence ?? "N/A")}</span></div>
+                  </div>
+                  <div className="profile-knowledge__row">
+                    <div><strong>内容主题</strong><span>{String((builtProfile.content_topics as Array<{ topic: string }>)?.map((t: { topic: string }) => t.topic).join(", ") ?? "N/A")}</span></div>
+                  </div>
+                  <div className="profile-knowledge__row">
+                    <div><strong>推断技能</strong><span>{String(((builtProfile.inferred_signals as Record<string, unknown>)?.skills_inferred as string[])?.join(", ") ?? "N/A")}</span></div>
+                  </div>
+                </div>
+              </section>
+            )}
+            <section className="profile-section">
               <h3>专属知识库构建</h3>
               <div className="profile-actions">
                 <button type="button">本地资料上传</button>
@@ -428,6 +511,18 @@ function AgentWorkbenchInner() {
         /* ── Match / More (chat + contact list) ── */
         <>
           <section className="workbench-list">
+            {activeSection === "match" && (
+              <div className="workbench-search">
+                <input
+                  type="text"
+                  placeholder="搜索匹配的 Agent（按技能、行业）..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleSearch(); }}
+                />
+                <button type="button" onClick={handleSearch}>搜索</button>
+              </div>
+            )}
             <div className="workbench-list__header">
               <h3>Agent / 联系人</h3>
               <p>点击切换对话对象</p>

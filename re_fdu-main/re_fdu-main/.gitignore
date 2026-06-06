@@ -6,3 +6,16 @@ coverage
 .turbo
 .env
 .env.*
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+*.egg
+
+# Profile extraction runtime data
+services/profile-extraction/data/*.db
+services/profile-extraction/data/*.faiss
+services/profile-extraction/outputs/
