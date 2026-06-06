@@ -137,6 +137,7 @@ export async function insertUser(input: {
   role: "senior" | "junior";
   created_at: number;
   avatar?: string | null;
+  bio?: string | null;
   title?: string | null;
   scores_json?: string | null;
   tags_json?: string | null;
@@ -157,6 +158,7 @@ export async function insertUser(input: {
     created_at: String(input.created_at),
   };
   if (input.avatar != null) userFields.avatar = input.avatar;
+  if (input.bio != null) userFields.bio = input.bio;
   if (input.title != null) userFields.title = input.title;
   if (input.highlight != null) userFields.highlight = input.highlight;
 
@@ -169,7 +171,7 @@ export async function insertUser(input: {
 
   await Promise.all([
     r.hset(userKey, userFields),
-    r.set(K.userByName(input.username), input.id),
+    r.set(K.userByName(input.username.toLowerCase()), input.id),
     r.sadd(K.usersByRole(input.role), input.id),
     Object.keys(profileFields).length > 0 ? r.hset(profileKey, profileFields) : Promise.resolve(0),
   ]);
@@ -209,8 +211,9 @@ export async function getBuiltProfile(userId: string): Promise<unknown | null> {
 export async function createSession(userId: string): Promise<string> {
   const r = getRedis();
   const token = randomBytes(32).toString("hex");
+  // Must HSET before EXPIRE — EXPIRE on a non-existent key is a silent no-op.
+  await r.hset(K.session(token), { user_id: userId, created_at: String(Date.now()) });
   await Promise.all([
-    r.hset(K.session(token), { user_id: userId, created_at: String(Date.now()) }),
     r.expire(K.session(token), SESSION_TTL_SEC),
     r.sadd(K.sessionByUser(userId), token),
   ]);
@@ -220,10 +223,9 @@ export async function createSession(userId: string): Promise<string> {
 export async function destroySession(token: string): Promise<void> {
   const r = getRedis();
   const userId = await r.hget<string>(K.session(token), "user_id");
-  await r.del(K.session(token));
-  if (userId) {
-    await r.srem(K.sessionByUser(userId), token);
-  }
+  const ops: Promise<unknown>[] = [r.del(K.session(token))];
+  if (userId) ops.push(r.srem(K.sessionByUser(userId), token));
+  await Promise.all(ops);
 }
 
 export async function touchSession(token: string): Promise<void> {
