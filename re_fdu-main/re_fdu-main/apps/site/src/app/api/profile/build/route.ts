@@ -12,7 +12,7 @@
 import { NextResponse } from "next/server";
 import { runPipeline } from "@/lib/python-bridge";
 import { getCurrentUser } from "@/lib/auth";
-import { updateUserBuiltProfile } from "@/lib/db";
+import { updateUserBuiltProfile } from "@/lib/users-redis";
 
 export const runtime = "nodejs";
 
@@ -59,7 +59,7 @@ export async function POST(request: Request) {
     if (u) {
       const profile = (result.data as { profile?: unknown }).profile;
       if (profile) {
-        updateUserBuiltProfile(u.pub.id, profile);
+        await updateUserBuiltProfile(u.pub.id, profile);
       }
     }
   } catch (e) {

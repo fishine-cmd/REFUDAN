@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { AuthError, requireUser } from "@/lib/auth";
-import { getBuiltProfile, updateUserBuiltProfile } from "@/lib/db";
+import { getBuiltProfile, updateUserBuiltProfile } from "@/lib/users-redis";
 
 export const runtime = "nodejs";
 
 export async function GET() {
   try {
     const u = await requireUser();
-    const builtProfile = getBuiltProfile(u.pub.id);
+    const builtProfile = await getBuiltProfile(u.pub.id);
     return NextResponse.json({ user: u.pub, builtProfile });
   } catch (e) {
     if (e instanceof AuthError) {
@@ -20,7 +20,7 @@ export async function GET() {
 export async function DELETE() {
   try {
     const u = await requireUser();
-    updateUserBuiltProfile(u.pub.id, null);
+    await updateUserBuiltProfile(u.pub.id, null);
     return NextResponse.json({ success: true });
   } catch (e) {
     if (e instanceof AuthError) {
