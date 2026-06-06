@@ -102,7 +102,9 @@ class ProfileDatabase:
         faiss_path = Path(self.faiss_path)
         if faiss_path.exists():
             try:
-                self._index = faiss.read_index(str(faiss_path))
+                # Use serialize/deserialize via bytes to support non-ASCII paths
+                # (faiss C++ FileIOWriter mishandles Unicode on Windows).
+                self._index = faiss.deserialize_index(faiss_path.read_bytes())
                 self._next_embedding_id = self._index.ntotal
             except Exception:
                 self._create_new_index()
@@ -122,7 +124,9 @@ class ProfileDatabase:
             return
         faiss_path = Path(self.faiss_path)
         faiss_path.parent.mkdir(parents=True, exist_ok=True)
-        faiss.write_index(self._index, str(faiss_path))
+        # Use serialize via bytes to support non-ASCII paths
+        # (faiss C++ FileIOWriter mishandles Unicode on Windows).
+        faiss_path.write_bytes(bytes(faiss.serialize_index(self._index)))
 
     # ═══════════════════════════════════════════════════════════════════
     #  Profile CRUD
