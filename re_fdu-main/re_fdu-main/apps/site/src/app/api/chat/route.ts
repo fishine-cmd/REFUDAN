@@ -7,8 +7,6 @@
 // 7) 返回 { chatId, reply }
 //
 // Phase 3a 的 persona 推导帮助器保留(derive*/extract* From BuiltProfile)。
-// 同时提供向后兼容 shim:旧的 { mentorId, messages, builtProfile } 入参 → 映射成新形状。
-// 该 shim 将在 Task 26 / Phase 5.4 cleanup 时一并删除。
 export const runtime = "nodejs";
 
 import { NextResponse, type NextRequest } from "next/server";
@@ -296,27 +294,11 @@ export async function POST(req: NextRequest) {
     seniorId?: string;
     question?: string;
     chatId?: string;
-    mentorId?: string;
-    messages?: { role: string; content: string }[];
-    builtProfile?: Record<string, unknown>;
   };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
-  }
-
-  // Backward-compat shim — DELETE in Task 26 (5.4 cleanup).
-  // Old shape: { mentorId, messages, builtProfile } where messages is the
-  // full history; last user message is the new question.
-  if (body.mentorId && Array.isArray(body.messages)) {
-    body.seniorId = body.seniorId ?? body.mentorId;
-    if (body.question == null) {
-      const lastUser = [...body.messages]
-        .reverse()
-        .find((m) => m.role === "user");
-      body.question = lastUser?.content ?? "";
-    }
   }
 
   if (!body.seniorId || !body.question || !body.question.trim()) {

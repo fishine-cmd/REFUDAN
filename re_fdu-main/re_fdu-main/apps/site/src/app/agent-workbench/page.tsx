@@ -115,7 +115,7 @@ function AgentWorkbenchInner() {
 
   /* ── Load mentors (Plaza only; chat panel removed) ── */
   useEffect(() => {
-    fetch("/api/mentors")
+    fetch("/api/seniors")
       .then((res) => res.json())
       .then((data) => {
         const list: MentorSummary[] = data.mentors ?? [];

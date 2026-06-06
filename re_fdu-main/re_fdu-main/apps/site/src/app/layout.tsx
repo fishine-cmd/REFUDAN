@@ -41,9 +41,6 @@ export default function RootLayout({
               <a className="frame__button" href="/agent-workbench">
                 Workbench
               </a>
-              <a className="frame__button" href="/mentors">
-                Mentors
-              </a>
             </div>
             <div className="frame__theme">
               <UserBadge />
