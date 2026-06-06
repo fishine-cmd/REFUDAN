@@ -1,9 +1,24 @@
+.DS_Store
+node_modules
+.next
+dist
+coverage
+.turbo
+.env
+.env.*
+!.env.example
+tsconfig.tsbuildinfo
+
+# Local OAuth2 token (demo only, do not commit)
+mentor_tokens.json
+
 # Binaries & installers
 *.msi
 *.exe
 *.zip
 *.lnk
 
+# Legacy folders preserved from upstream zip drop
 re_fdu_new/
 fig/
 新建文件夹/

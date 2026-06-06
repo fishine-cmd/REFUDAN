@@ -112,12 +112,25 @@ for (const it of items) {
 // ── 3. 生成代码仓库链接 (提交要求 4) ──────────────────
 const linkPath = path.join(BUNDLE_DIR, "04_代码仓库链接.txt");
 const linkContent = `RE:FUDAN（复见） 项目代码仓库
+========================================
 
-主仓库 (fork):  ${REPO_URL}
-开发分支:        feat/secondme-integration
-原始仓库:        https://github.com/Wesleyyyyyy/REFUDAN
+主仓库 (fork):    ${REPO_URL}
+开发分支:          feat/secondme-integration
+原始仓库:          https://github.com/Wesleyyyyyy/REFUDAN
 
-部署/运行说明请见 05_代码运行说明.md
+注意 · 评审入口
+----------------------------------------
+仓库由上游 zip 解压生成，实际代码位于双层嵌套
+路径 \`re_fdu-main/re_fdu-main/\` 内。
+
+GitHub 浏览：
+  ${REPO_URL}/tree/feat/secondme-integration/re_fdu-main/re_fdu-main
+
+本地 clone：
+  git clone -b feat/secondme-integration ${REPO_URL}
+  cd REFUDAN/re_fdu-main/re_fdu-main
+
+详细运行步骤见 05_代码运行说明.md。
 `;
 fs.writeFileSync(linkPath, linkContent, "utf-8");
 ok("已生成 04_代码仓库链接.txt");
