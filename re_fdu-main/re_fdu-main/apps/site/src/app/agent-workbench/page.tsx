@@ -107,6 +107,14 @@ function AgentWorkbenchInner() {
   const [errors, setErrors] = useState<string[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStep, setGenerationStep] = useState(0);
+
+  /* ── Platform accounts for Profile Extraction (Phase 1: GitHub real, others WIP) ── */
+  const [xhsId, setXhsId] = useState("");
+  const [githubUser, setGithubUser] = useState("");
+  const [linkedinUrl, setLinkedinUrl] = useState("");
+  const [zhihuId, setZhihuId] = useState("");
+  const [builtProfile, setBuiltProfile] = useState<Record<string, unknown> | null>(null);
+
   const [knowledgeItems, setKnowledgeItems] = useState([
     { id: "k1", title: "夏令营面试笔记.pdf", source: "本地上传", privacy: "公开" },
     { id: "k2", title: "实习复盘总结.md", source: "本地上传", privacy: "握手后可见" },
@@ -273,9 +281,47 @@ function AgentWorkbenchInner() {
     setErrors(nextErrors);
     return nextErrors.length === 0;
   };
-  const handleGenerate = () => {
-    if (!validateProfile()) return;
+  const collectPlatformAccounts = (): string[] => {
+    const accounts: string[] = [];
+    if (xhsId.trim()) accounts.push(xhsId.trim());
+    if (githubUser.trim()) accounts.push(`github:${githubUser.trim()}`);
+    if (linkedinUrl.trim()) accounts.push(linkedinUrl.trim());
+    if (zhihuId.trim()) accounts.push(zhihuId.trim());
+    return accounts;
+  };
+  const handleGenerate = async () => {
+    const accounts = collectPlatformAccounts();
+
+    if (accounts.length === 0) {
+      if (!validateProfile()) return;
+      setIsGenerating(true);
+      return;
+    }
+
+    setErrors([]);
     setIsGenerating(true);
+    setBuiltProfile(null);
+
+    try {
+      const res = await fetch("/api/profile/build", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accounts,
+          displayName: [school, major, goal].filter(Boolean).join(" ").trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.profile) {
+        setBuiltProfile(data.profile);
+      } else {
+        setErrors([data.error ?? `Profile build failed (HTTP ${res.status})`]);
+      }
+    } catch (err) {
+      setErrors([`Network error: ${String(err)}`]);
+    } finally {
+      window.setTimeout(() => setIsGenerating(false), 800);
+    }
   };
 
   /* ═══════════════════════════════════════════════════════════════
@@ -408,6 +454,18 @@ function AgentWorkbenchInner() {
               </div>
             </section>
             <section className="profile-section">
+              <h3>社媒账号 · 画像提取</h3>
+              <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginTop: "-0.25rem", marginBottom: "0.75rem" }}>
+                填任一字段即可触发 Profile Extraction 管线。GitHub 走公开 REST API，无需 Edge；其他平台需 Edge CDP 已启动。
+              </p>
+              <div className="profile-grid">
+                <label className="profile-field">GitHub 用户名 <input value={githubUser} onChange={(e) => setGithubUser(e.target.value)} placeholder="例如：torvalds" /></label>
+                <label className="profile-field">小红书 ID <input value={xhsId} onChange={(e) => setXhsId(e.target.value)} placeholder="纯数字 8-12 位" /></label>
+                <label className="profile-field">LinkedIn URL <input value={linkedinUrl} onChange={(e) => setLinkedinUrl(e.target.value)} placeholder="https://linkedin.com/in/..." /></label>
+                <label className="profile-field">知乎 ID 或 URL <input value={zhihuId} onChange={(e) => setZhihuId(e.target.value)} placeholder="https://zhihu.com/people/..." /></label>
+              </div>
+            </section>
+            <section className="profile-section">
               <h3>专属知识库构建</h3>
               <div className="profile-actions">
                 <button type="button">本地资料上传</button>
@@ -429,6 +487,14 @@ function AgentWorkbenchInner() {
               <h3>Agent 对话定位输入区</h3>
               <textarea className="profile-textarea profile-textarea--large" placeholder="你想让 Agent 帮你问什么？例如：帮我了解保研面试的重点..." value={promptText} onChange={(e) => setPromptText(e.target.value)} />
             </section>
+            {builtProfile && (
+              <section className="profile-section" style={{ background: "rgba(126, 205, 196, 0.05)", border: "1px solid var(--accent, #7ECDC4)", borderRadius: "8px", padding: "1rem" }}>
+                <h3>✅ 画像提取结果</h3>
+                <pre style={{ maxHeight: "400px", overflow: "auto", fontSize: "0.75rem", whiteSpace: "pre-wrap", wordBreak: "break-all", background: "rgba(0,0,0,0.3)", padding: "0.75rem", borderRadius: "4px", color: "var(--foreground, #fff)" }}>
+                  {JSON.stringify(builtProfile, null, 2)}
+                </pre>
+              </section>
+            )}
           </div>
           {errors.length > 0 && (
             <div className="profile-errors">{errors.map((err) => (<p key={err}>{err}</p>))}</div>
