@@ -21,6 +21,7 @@ from typing import Any
 from schoolmate.collectors.base import detect_platform, classify_identifiers
 from schoolmate.collectors.github_collector import GitHubCollector
 from schoolmate.collectors.linkedin_collector import LinkedInCollector
+from schoolmate.collectors.xhs_collector import XHSCollector
 from schoolmate.collectors.zhihu_collector import ZhihuCollector
 
 
@@ -204,9 +205,8 @@ class CollectorDispatcher:
         ident = task["identifier"]
 
         if plat == "xiaohongshu":
-            from note_collector import NoteCollector
-            nc = NoteCollector()
-            return nc.collect(identifier=ident, max_notes=self.defaults["xiaohongshu"]["max_notes"])
+            xc = XHSCollector()
+            return xc.collect(identifier=ident, max_notes=self.defaults["xiaohongshu"]["max_notes"])
 
         elif plat == "github":
             gc = GitHubCollector()

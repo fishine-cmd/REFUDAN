@@ -22,4 +22,5 @@ __pycache__/
 # Profile extraction 运行时数据
 services/profile-extraction/data/*.db
 services/profile-extraction/data/*.faiss
+services/profile-extraction/data/browser_profile/
 services/profile-extraction/outputs/

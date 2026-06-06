@@ -69,6 +69,20 @@ http://localhost:3000/api/auth/secondme/status JSON 状态查询接口
 
 完整运行 / 排错指南：[`doc/05_代码运行说明.md`](doc/05_代码运行说明.md)
 
+### 社媒画像提取（XHS 首次登录）
+
+GitHub 走公开 REST 不需要登录；XHS（小红书）大部分内容必须登录才能看到。**一次性**操作：
+
+1. 项目跑起来后，双击 `services/profile-extraction/xhs_login.bat`
+2. 自动弹出 Chromium 窗口，打开小红书
+3. 在窗口里**扫码或输入账号密码登录**
+4. 完成后回到 cmd 窗口按 **Enter**
+5. cookie 自动持久化到 `services/profile-extraction/data/browser_profile/`
+
+之后用 `/agent-workbench` 填 XHS ID 时，Python 管线自动用 headless Chromium 复用这套登录态。Cookie 过期时前端会清楚提示重跑 `xhs_login.bat`。
+
+GitHub 用户名可选：`apps/site/.env.local` 加一行 `GITHUB_TOKEN=ghp_...` 把匿名速率 60/h 升到 5000/h（去 https://github.com/settings/tokens 生成，全部 scope 不勾即可）。
+
 ---
 
 ## 🧩 项目结构

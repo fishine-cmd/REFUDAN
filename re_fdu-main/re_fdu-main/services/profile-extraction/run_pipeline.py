@@ -148,8 +148,34 @@ Examples:
     parser.add_argument("--get-profile", default=None,
                         help="Retrieve a stored profile by user_id and print JSON.")
 
+    # ── Browser login (one-shot, persists cookies for Playwright collectors) ──
+    parser.add_argument("--xhs-login", action="store_true",
+                        help="One-shot: open a headed browser to xiaohongshu.com so the "
+                             "user can scan/login manually. Cookies persist to "
+                             "data/browser_profile/. Subsequent collect runs go headless.")
+
     args = parser.parse_args()
     ensure_dirs()
+
+    # ── XHS login one-shot mode ──
+    if args.xhs_login:
+        try:
+            from schoolmate.browser import login_session
+            sys.stderr.write("\n[XHS Login] Opening browser → xiaohongshu.com\n")
+            sys.stderr.write("[XHS Login] 请在打开的浏览器窗口中扫码或输入账号密码登录小红书\n")
+            sys.stderr.write("[XHS Login] 登录完成后,回到本窗口按 Enter 关闭浏览器并保存登录态\n")
+            sys.stderr.flush()
+            with login_session("https://www.xiaohongshu.com") as _page:
+                input()
+            sys.stderr.write("[XHS Login] OK — cookie 已保存到 data/browser_profile/\n")
+            if args.json_output:
+                print(json.dumps({"success": True, "message": "XHS login persisted"}, ensure_ascii=False))
+            return 0
+        except Exception as e:
+            sys.stderr.write(f"[XHS Login] FAILED: {e}\n")
+            if args.json_output:
+                print(json.dumps({"success": False, "error": str(e)}, ensure_ascii=False))
+            return 1
 
     # ── Log helper (--json-output routes progress to stderr) ──
     def log(msg: str) -> None:

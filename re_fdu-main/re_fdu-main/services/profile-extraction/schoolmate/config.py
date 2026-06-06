@@ -37,7 +37,16 @@ FAISS_INDEX_PATH = os.environ.get(
 )
 EMBEDDING_DIM = int(os.environ.get("SCHOOLMATE_EMBEDDING_DIM", "1024"))
 
-# ── CDP Proxy ──
+# ── Browser (Playwright persistent context) ──
+BROWSER_USER_DATA_DIR = os.environ.get(
+    "SCHOOLMATE_BROWSER_USER_DATA_DIR",
+    str(DB_DIR / "browser_profile"),
+)
+BROWSER_HEADLESS_DEFAULT = os.environ.get("SCHOOLMATE_BROWSER_HEADLESS", "true").lower() in ("1", "true", "yes")
+BROWSER_VIEWPORT_WIDTH = int(os.environ.get("SCHOOLMATE_BROWSER_VIEWPORT_WIDTH", "1280"))
+BROWSER_VIEWPORT_HEIGHT = int(os.environ.get("SCHOOLMATE_BROWSER_VIEWPORT_HEIGHT", "800"))
+
+# ── CDP Proxy (legacy; kept for older collectors transitioning to Playwright) ──
 CDP_PROXY_URL = os.environ.get(
     "CDP_PROXY_URL",
     "http://localhost:3456",

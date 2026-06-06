@@ -1,5 +1,11 @@
 # schoolmate/collectors/linkedin_collector.py
-"""LinkedIn public profile collector via Edge CDP."""
+"""LinkedIn public profile collector.
+
+WIP: implementation pending Phase 4. DOM selectors and flow are
+unverified and the scraping logic below is the legacy CDP-based skeleton.
+collect() will likely return empty_result() until rewritten with
+Playwright-aware selectors and LinkedIn-specific anti-bot handling.
+"""
 
 from __future__ import annotations
 
@@ -7,7 +13,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
-from extract_xhs_profile import create_tab, close_tab, page_snapshot, eval_js, scroll
+from schoolmate.browser import create_tab, close_tab, page_snapshot, eval_js, scroll
 from schoolmate.collectors.base import BaseCollector, normalize_note
 
 

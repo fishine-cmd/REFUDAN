@@ -89,14 +89,14 @@ REM [4/6] Python 依赖
 REM ================================================================
 echo.
 echo [4/6] 正在检查 Python 依赖...
-python -c "import faiss, requests, pydantic, numpy" >nul 2>&1
+python -c "import faiss, requests, pydantic, numpy, playwright" >nul 2>&1
 if !errorlevel! neq 0 (
     echo   ^> 缺少 Python 依赖,正在安装...
     python -m pip install --quiet -r services\profile-extraction\requirements.txt
     if !errorlevel! neq 0 (
         echo.
         echo [警告] Python 依赖安装失败
-        echo   GitHub 提取仍可走 REST,但 XHS/知乎/LinkedIn 等 CDP 链路会不可用
+        echo   GitHub 提取仍可走 REST,但 XHS 等需要 Playwright 的链路会不可用
         echo   手动方案:cd services\profile-extraction ^&^& pip install -r requirements.txt
         echo.
         echo   按任意键继续,跳过此步...
@@ -109,25 +109,27 @@ if !errorlevel! neq 0 (
 )
 
 REM ================================================================
-REM [5/6] Edge CDP
+REM [5/6] Playwright Chromium
 REM ================================================================
 echo.
-echo [5/6] 正在检查 Edge CDP 远程调试...
-netstat -an | findstr ":3456 " >nul 2>&1
-if %errorlevel% equ 0 (
-    echo   ^> 端口 3456 已被占用,假定 Edge CDP 已运行
-) else (
-    set "EDGE_PATH="
-    if exist "%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe" set "EDGE_PATH=%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe"
-    if exist "%ProgramFiles%\Microsoft\Edge\Application\msedge.exe" set "EDGE_PATH=%ProgramFiles%\Microsoft\Edge\Application\msedge.exe"
-    if defined EDGE_PATH (
-        echo   ^> 正在启动 Edge 远程调试,独立 user-data-dir 不影响日常 Edge
-        start "Edge CDP (3456)" "!EDGE_PATH!" --remote-debugging-port=3456 --user-data-dir="%USERPROFILE%\.edge-cdp-profile"
-        echo   ^> 已启动
+echo [5/6] 正在检查 Playwright Chromium...
+python -c "from playwright.sync_api import sync_playwright; import pathlib; p=sync_playwright().start(); ok=pathlib.Path(p.chromium.executable_path).exists(); p.stop(); exit(0 if ok else 1)" >nul 2>&1
+if !errorlevel! neq 0 (
+    echo   ^> Chromium 未装,正在下载,约 150MB,可能需要 1-3 分钟...
+    python -m playwright install chromium
+    if !errorlevel! neq 0 (
+        echo.
+        echo [警告] Chromium 下载失败
+        echo   GitHub 提取走 REST 不受影响,XHS 提取将不可用
+        echo   手动方案:python -m playwright install chromium
+        echo.
+        echo   按任意键继续...
+        pause >nul
     ) else (
-        echo   ^> 未找到 Edge 浏览器,跳过 CDP 启动
-        echo   ^> GitHub 走 REST 不受影响,XHS/知乎/LinkedIn 提取将不可用
+        echo   ^> Chromium 已就绪
     )
+) else (
+    echo   ^> Chromium 已就绪
 )
 
 REM ================================================================
@@ -150,13 +152,13 @@ echo ========================================
 echo.
 echo   site: http://localhost:3000
 echo   app : http://localhost:3001
-echo   Edge CDP: localhost:3456
 echo.
-echo   停止方法:关掉
-echo            "RE:FUDAN site (3000)"
-echo            "RE:FUDAN app (3001)"
-echo            "Edge CDP (3456)" 的 Edge 窗口
-echo            这三个窗口即可
+echo   XHS 首次使用需要登录:
+echo   双击 services\profile-extraction\xhs_login.bat
+echo.
+echo   停止方法:关掉那两个标题为
+echo            "RE:FUDAN site (3000)" 和 "RE:FUDAN app (3001)"
+echo            的黑窗口即可
 echo.
 echo   按任意键关闭本窗口,不影响已启动的应用
 pause >nul
