@@ -115,6 +115,16 @@ function AgentWorkbenchInner() {
   const [zhihuId, setZhihuId] = useState("");
   const [builtProfile, setBuiltProfile] = useState<Record<string, unknown> | null>(null);
 
+  /* ── Restore persisted builtProfile across page reloads ── */
+  useEffect(() => {
+    try {
+      const raw = typeof window !== "undefined" ? window.localStorage.getItem("refudan.builtProfile") : null;
+      if (raw) setBuiltProfile(JSON.parse(raw));
+    } catch {
+      // ignore corrupt storage
+    }
+  }, []);
+
   const [knowledgeItems, setKnowledgeItems] = useState([
     { id: "k1", title: "夏令营面试笔记.pdf", source: "本地上传", privacy: "公开" },
     { id: "k2", title: "实习复盘总结.md", source: "本地上传", privacy: "握手后可见" },
@@ -224,6 +234,10 @@ function AgentWorkbenchInner() {
           background: "复旦大学在校生 AI 数字分身，了解你的全部背景与需求",
           expertise: "根据你的档案信息，提供个性化建议和路径匹配",
         };
+        // Phase 3a: ship the extracted profile alongside the fallback persona;
+        // backend prefers builtProfile when present, deriving a real persona +
+        // extraContext from the user's GitHub/XHS data.
+        if (builtProfile) body.builtProfile = builtProfile;
       }
 
       const res = await fetch("/api/chat", {
@@ -259,7 +273,7 @@ function AgentWorkbenchInner() {
     } finally {
       setIsChatLoading(false);
     }
-  }, [chatInput, isChatLoading, activeContact, conversationState]);
+  }, [chatInput, isChatLoading, activeContact, conversationState, builtProfile]);
 
   /* ── Profile handlers ── */
   const handleResumeFile = (file: File | null) => {
@@ -315,6 +329,11 @@ function AgentWorkbenchInner() {
       const data = await res.json();
       if (res.ok && data.profile) {
         setBuiltProfile(data.profile);
+        try {
+          window.localStorage.setItem("refudan.builtProfile", JSON.stringify(data.profile));
+        } catch {
+          // localStorage may be full or disabled; non-fatal
+        }
       } else {
         setErrors([data.error ?? `Profile build failed (HTTP ${res.status})`]);
       }
@@ -490,7 +509,19 @@ function AgentWorkbenchInner() {
             </section>
             {builtProfile && (
               <section className="profile-section" style={{ background: "rgba(126, 205, 196, 0.05)", border: "1px solid var(--accent, #7ECDC4)", borderRadius: "8px", padding: "1rem" }}>
-                <h3>✅ 画像提取结果</h3>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+                  <h3 style={{ margin: 0 }}>✅ 画像提取结果（已持久化，将注入"我的 Agent"对话）</h3>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBuiltProfile(null);
+                      try { window.localStorage.removeItem("refudan.builtProfile"); } catch { /* noop */ }
+                    }}
+                    style={{ fontSize: "0.75rem", padding: "0.3rem 0.75rem", borderRadius: "4px", border: "1px solid var(--border-default, #888)", background: "transparent", color: "inherit", cursor: "pointer" }}
+                  >
+                    清除画像
+                  </button>
+                </div>
                 <pre style={{ maxHeight: "400px", overflow: "auto", fontSize: "0.75rem", whiteSpace: "pre-wrap", wordBreak: "break-all", background: "rgba(0,0,0,0.3)", padding: "0.75rem", borderRadius: "4px", color: "var(--foreground, #fff)" }}>
                   {JSON.stringify(builtProfile, null, 2)}
                 </pre>
