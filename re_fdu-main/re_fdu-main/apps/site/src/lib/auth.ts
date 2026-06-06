@@ -1,9 +1,8 @@
-// Auth primitives. Uses node:crypto.scrypt for password hashing (no native
-// build deps required; fast and secure). Server-side sessions in SQLite,
-// HttpOnly cookies, sliding 7-day expiration.
+// Auth primitives. node:crypto.scrypt password hashing. Server-side sessions
+// in Upstash Redis (TTL-based), HttpOnly cookies, sliding 7-day expiration.
 //
 // Routes that use this MUST set `export const runtime = "nodejs"` so
-// node:sqlite and node:crypto are available.
+// node:crypto is available and Upstash REST 走 fetch on Node runtime.
 
 import { randomBytes, scrypt, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
@@ -11,11 +10,15 @@ import { cookies } from "next/headers";
 import {
   findUserById,
   findUserByUsername,
-  getDb,
+  findUserBySessionToken as findUserBySessionTokenDal,
+  createSession as createSessionDal,
+  destroySession as destroySessionDal,
+  touchSession as touchSessionDal,
+  insertUser,
   toPublicUser,
   type PublicUser,
   type UserRow,
-} from "./db";
+} from "./users-redis";
 
 const SESSION_COOKIE = "refudan_session";
 const SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
@@ -56,39 +59,20 @@ export async function verifyPassword(plain: string, stored: string): Promise<boo
 // Sessions
 // ────────────────────────────────────────────────────────────────────────
 
-export function createSession(userId: string): string {
-  const token = randomBytes(32).toString("hex");
-  const now = Date.now();
-  const expiresAt = now + SESSION_MAX_AGE_SECONDS * 1000;
-  getDb().prepare(
-    "INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
-  ).run(token, userId, now, expiresAt);
-  return token;
+export async function createSession(userId: string): Promise<string> {
+  return createSessionDal(userId);
 }
 
-export function destroySession(token: string): void {
-  getDb().prepare("DELETE FROM sessions WHERE token = ?").run(token);
+export async function destroySession(token: string): Promise<void> {
+  await destroySessionDal(token);
 }
 
-export function touchSession(token: string): void {
-  const expiresAt = Date.now() + SESSION_MAX_AGE_SECONDS * 1000;
-  getDb().prepare("UPDATE sessions SET expires_at = ? WHERE token = ?").run(
-    expiresAt,
-    token,
-  );
+export async function touchSession(token: string): Promise<void> {
+  await touchSessionDal(token);
 }
 
-export function findUserBySessionToken(token: string): UserRow | null {
-  const db = getDb();
-  const session = db.prepare(
-    "SELECT user_id, expires_at FROM sessions WHERE token = ?",
-  ).get(token) as { user_id: string; expires_at: number } | undefined;
-  if (!session) return null;
-  if (session.expires_at < Date.now()) {
-    db.prepare("DELETE FROM sessions WHERE token = ?").run(token);
-    return null;
-  }
-  return findUserById(session.user_id);
+export async function findUserBySessionToken(token: string): Promise<UserRow | null> {
+  return findUserBySessionTokenDal(token);
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -124,9 +108,9 @@ export async function readSessionCookie(): Promise<string | null> {
 export async function getCurrentUser(): Promise<{ row: UserRow; pub: PublicUser } | null> {
   const token = await readSessionCookie();
   if (!token) return null;
-  const row = findUserBySessionToken(token);
+  const row = await findUserBySessionToken(token);
   if (!row) return null;
-  touchSession(token);
+  await touchSession(token);
   return { row, pub: toPublicUser(row) };
 }
 
@@ -201,7 +185,7 @@ export async function createUser(input: {
   const role = validateRole(input.role);
   const displayName = validateDisplayName(input.displayName);
 
-  if (findUserByUsername(username)) {
+  if (await findUserByUsername(username)) {
     throw new AuthError("username already taken", 409);
   }
 
@@ -209,12 +193,16 @@ export async function createUser(input: {
   const id = randomBytes(16).toString("hex");
   const now = Date.now();
 
-  getDb().prepare(`
-    INSERT INTO users (id, username, password_hash, display_name, role, created_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(id, username, passwordHash, displayName, role, now);
+  await insertUser({
+    id,
+    username,
+    password_hash: passwordHash,
+    display_name: displayName,
+    role,
+    created_at: now,
+  });
 
-  const row = findUserById(id);
+  const row = await findUserById(id);
   if (!row) throw new AuthError("user not found after insert", 500);
   return row;
 }
