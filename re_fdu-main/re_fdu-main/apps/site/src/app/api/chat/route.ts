@@ -1,5 +1,26 @@
-import { NextResponse } from "next/server";
-import { loadMentor } from "@/data/mentors";
+// POST /api/chat — 学弟向某学长发问。
+// Body: { seniorId, question, chatId? }
+// 1) requireRole("junior")    2) 校验 senior 存在
+// 3) 新对话则 createChat,老对话则校验 owner   4) 写 user msg
+// 5) 组 system prompt(persona + builtProfile 提示)+ 调 DeepSeek
+// 6) 写 assistant msg(同步更新 inbox + 学长未读)
+// 7) 返回 { chatId, reply }
+//
+// Phase 3a 的 persona 推导帮助器保留(derive*/extract* From BuiltProfile)。
+// 同时提供向后兼容 shim:旧的 { mentorId, messages, builtProfile } 入参 → 映射成新形状。
+// 该 shim 将在 Task 26 / Phase 5.4 cleanup 时一并删除。
+export const runtime = "nodejs";
+
+import { NextResponse, type NextRequest } from "next/server";
+import { requireRole } from "@/lib/auth";
+import { findUserById, type UserRow } from "@/lib/users-redis";
+import {
+  createChat,
+  getChatMeta,
+  getChatMessages,
+  appendUserMessage,
+  appendAssistantMessage,
+} from "@/lib/chat-redis";
 
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 // Base URL must NOT include /v1 — the route appends it. This matches the
@@ -179,135 +200,179 @@ function extractKeyExperiencesFromBuiltProfile(profile: Record<string, unknown>)
   return parts.join("\n").slice(0, 2000);
 }
 
+// ─── senior(UserRow) → system prompt ─────────────────────────────────
+// 学长的 persona / detailed_profile / built_profile 都来自 Redis,在 seed 阶段
+// 由 mentor JSON 写入。优先级:
+//   1) persona_json 作为基础 persona(seed 自 mentor.persona)
+//   2) detailed_profile_json 存在 → 复用 mentor JSON 的 extractKeyExperiences
+//   3) 否则 built_profile_json 存在 → 复用 Phase 3a 的 derive*/extract* From BuiltProfile
+//   4) 若 persona 缺失,用 displayName 兜底
+function buildSystemPromptFromSenior(senior: UserRow): string {
+  let persona: Persona | null = null;
+  if (senior.persona_json) {
+    try {
+      const p = JSON.parse(senior.persona_json) as Partial<Persona>;
+      if (p && p.name && p.background && p.expertise) {
+        persona = { name: p.name, background: p.background, expertise: p.expertise };
+      }
+    } catch { /* ignore */ }
+  }
 
-export async function POST(request: Request) {
-  let body: { messages?: unknown; mentorId?: unknown; persona?: unknown; builtProfile?: unknown };
+  let extraContext: string | undefined;
+
+  if (senior.detailed_profile_json) {
+    try {
+      const detailed = JSON.parse(senior.detailed_profile_json) as Record<string, unknown>;
+      extraContext = extractKeyExperiences(detailed);
+    } catch { /* ignore */ }
+  }
+
+  if (!extraContext && senior.built_profile_json) {
+    try {
+      const built = JSON.parse(senior.built_profile_json) as Record<string, unknown>;
+      if (!persona) persona = derivePersonaFromBuiltProfile(built);
+      extraContext = extractKeyExperiencesFromBuiltProfile(built);
+    } catch { /* ignore */ }
+  }
+
+  if (!persona) {
+    persona = {
+      name: senior.display_name || senior.username,
+      background: senior.bio ?? "复旦大学的学长/学姐",
+      expertise: senior.title ?? "学业、保研、实习、申请等校园经验",
+    };
+  }
+
+  return buildSystemPrompt(persona, extraContext);
+}
+
+// ─── DeepSeek call ──────────────────────────────────────────────────
+// Non-streaming. Returns the assistant text or throws.
+async function callDeepseek(
+  messages: { role: "system" | "user" | "assistant"; content: string }[],
+): Promise<string> {
+  if (!DEEPSEEK_API_KEY) {
+    throw new Error(
+      "未配置 DEEPSEEK_API_KEY，请在 apps/site/.env.local 设置后重启 dev server。",
+    );
+  }
+  const response = await fetch(`${DEEPSEEK_BASE_URL}/v1/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${DEEPSEEK_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: "deepseek-chat",
+      messages,
+      temperature: 0.7,
+      max_tokens: 800,
+    }),
+    signal: AbortSignal.timeout(30000),
+  });
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error("DeepSeek API error:", response.status, errorText);
+    throw new Error(`DeepSeek API returned ${response.status}`);
+  }
+  const data = await response.json();
+  return data.choices?.[0]?.message?.content || "（未生成回复，请稍后重试）";
+}
+
+// ─── POST handler ───────────────────────────────────────────────────
+export async function POST(req: NextRequest) {
+  let me;
   try {
-    body = await request.json();
+    me = await requireRole("junior");
+  } catch (e) {
+    const status = (e as { status?: number })?.status ?? 401;
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "Auth failed" },
+      { status },
+    );
+  }
+
+  let body: {
+    seniorId?: string;
+    question?: string;
+    chatId?: string;
+    mentorId?: string;
+    messages?: { role: string; content: string }[];
+    builtProfile?: Record<string, unknown>;
+  };
+  try {
+    body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { messages, mentorId, persona: fallbackPersona, builtProfile } = body as {
-    messages?: { role: string; content: string }[];
-    mentorId?: string;
-    persona?: Persona;
-    builtProfile?: Record<string, unknown>;
-  };
-
-  if (!messages || !Array.isArray(messages)) {
-    return NextResponse.json(
-      { error: "messages array is required" },
-      { status: 400 }
-    );
-  }
-
-  // ─── DeepSeek 主路径（项目已不再接入 SecondMe，全部对话走 DeepSeek） ──
-  if (!DEEPSEEK_API_KEY) {
-    return NextResponse.json(
-      {
-        error:
-          "未配置 DEEPSEEK_API_KEY，请在 apps/site/.env.local 设置后重启 dev server。",
-      },
-      { status: 500 }
-    );
-  }
-
-  // Resolve persona: priority order
-  //   1. mentorId → load from mentor JSON (mentor's curated persona)
-  //   2. builtProfile → derive from Phase 2 extraction (user's real AI 分身)
-  //   3. fallbackPersona → frontend's hardcoded generic persona
-  let persona: Persona;
-  let extraContext: string | undefined;
-
-  if (mentorId) {
-    const profile = loadMentor(mentorId);
-    if (profile) {
-      persona = profile.persona;
-      if (profile.detailed_profile) {
-        extraContext = extractKeyExperiences(profile.detailed_profile as Record<string, unknown>);
-      }
-    } else if (builtProfile) {
-      persona = derivePersonaFromBuiltProfile(builtProfile);
-      extraContext = extractKeyExperiencesFromBuiltProfile(builtProfile);
-    } else if (fallbackPersona?.name) {
-      persona = fallbackPersona;
-    } else {
-      return NextResponse.json(
-        { error: `Mentor "${mentorId}" not found` },
-        { status: 400 }
-      );
+  // Backward-compat shim — DELETE in Task 26 (5.4 cleanup).
+  // Old shape: { mentorId, messages, builtProfile } where messages is the
+  // full history; last user message is the new question.
+  if (body.mentorId && Array.isArray(body.messages)) {
+    body.seniorId = body.seniorId ?? body.mentorId;
+    if (body.question == null) {
+      const lastUser = [...body.messages]
+        .reverse()
+        .find((m) => m.role === "user");
+      body.question = lastUser?.content ?? "";
     }
-  } else if (builtProfile) {
-    persona = derivePersonaFromBuiltProfile(builtProfile);
-    extraContext = extractKeyExperiencesFromBuiltProfile(builtProfile);
-  } else if (fallbackPersona?.name) {
-    persona = fallbackPersona;
-  } else {
+  }
+
+  if (!body.seniorId || !body.question || !body.question.trim()) {
     return NextResponse.json(
-      { error: "mentorId, builtProfile, or persona is required" },
-      { status: 400 }
+      { error: "seniorId and question required" },
+      { status: 400 },
     );
   }
 
-  const systemPrompt = buildSystemPrompt(persona, extraContext);
+  const senior = await findUserById(body.seniorId);
+  if (!senior || senior.role !== "senior") {
+    return NextResponse.json({ error: "senior not found" }, { status: 404 });
+  }
 
-  const apiMessages = [
+  let chatId = body.chatId;
+  if (!chatId) {
+    chatId = await createChat(me.row.id, senior.id);
+  } else {
+    const meta = await getChatMeta(chatId);
+    if (!meta || meta.juniorId !== me.row.id || meta.seniorId !== senior.id) {
+      return NextResponse.json({ error: "chat not found" }, { status: 404 });
+    }
+  }
+
+  await appendUserMessage(chatId, body.question);
+
+  const history = await getChatMessages(chatId);
+  const systemPrompt = buildSystemPromptFromSenior(senior);
+
+  const apiMessages: { role: "system" | "user" | "assistant"; content: string }[] = [
     { role: "system", content: systemPrompt },
-    ...messages.map((m) => ({
-      role: m.role as "user" | "assistant",
-      content: m.content,
-    })),
+    ...history.map((m) => ({ role: m.role, content: m.content })),
   ];
 
+  let reply: string;
   try {
-    const response = await fetch(
-      `${DEEPSEEK_BASE_URL}/v1/chat/completions`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${DEEPSEEK_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: "deepseek-chat",
-          messages: apiMessages,
-          temperature: 0.7,
-          max_tokens: 800,
-        }),
-        signal: AbortSignal.timeout(30000),
-      }
-    );
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("DeepSeek API error:", response.status, errorText);
-      return NextResponse.json(
-        { error: `DeepSeek API returned ${response.status}` },
-        { status: 502 }
-      );
-    }
-
-    const data = await response.json();
-    const reply =
-      data.choices?.[0]?.message?.content || "（未生成回复，请稍后重试）";
-
-    return NextResponse.json({ reply });
+    reply = await callDeepseek(apiMessages);
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Unknown error";
+    const message = error instanceof Error ? error.message : "Unknown error";
     console.error("Chat API error:", message);
-
+    if (message.includes("DEEPSEEK_API_KEY")) {
+      return NextResponse.json({ error: message }, { status: 500 });
+    }
     if (message.includes("timeout") || message.includes("abort")) {
       return NextResponse.json(
         { error: "DeepSeek API 响应超时，请稍后重试" },
-        { status: 504 }
+        { status: 504 },
       );
     }
-
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    if (message.startsWith("DeepSeek API returned ")) {
+      return NextResponse.json({ error: message }, { status: 502 });
+    }
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
+
+  await appendAssistantMessage(chatId, reply, body.question);
+
+  return NextResponse.json({ chatId, reply });
 }
