@@ -34,8 +34,10 @@ export async function getChatMeta(chatId: string): Promise<ChatMeta | null> {
 
 export async function getChatMessages(chatId: string): Promise<ChatMessage[]> {
   const r = getRedis();
-  const items = await r.lrange<string>(K.chatMsgs(chatId), 0, -1);
-  return items.map((s) => JSON.parse(s) as ChatMessage);
+  // Upstash REST 客户端会对值做 JSON 自动反序列化,字符串入参时返回 parsed 对象。
+  // 这里既兼容已 parse 的对象,也兼容原始字符串。
+  const items = await r.lrange<unknown>(K.chatMsgs(chatId), 0, -1);
+  return items.map((s) => (typeof s === "string" ? (JSON.parse(s) as ChatMessage) : (s as ChatMessage)));
 }
 
 /** 创建新对话(首条用户消息前调用)。返回 chatId。 */
