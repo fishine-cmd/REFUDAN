@@ -343,3 +343,13 @@ Phase 5 完成时,以下流程必须跑通:
 - Phase 4:`docs/superpowers/specs/2026-06-07-phase4-multi-user-design.md`
 - Upstash 控制台:`https://console.upstash.com/redis/dc48ed99-7745-4aca-afd1-23ebb762b7c0`
 - Upstash Redis SDK:`https://github.com/upstash/redis-js`
+
+## 14. 验收记录(Phase 5 完成)
+
+- 日期: 2026-06-07
+- 测试账号: alice_demo27 (junior, fresh signup) / chensirui (senior seed)
+- 验收 8 步全过 ✅(Step 3 提取流程因 headless 环境跳过,使用冷启动路径验证推荐)
+- 已知小问题:
+  - 早期 testjunior01 账号 displayName 在 Upstash 中以 mojibake 形式存储("����ѧ��01"),不影响功能,demo 前可清掉旧测试数据
+  - 推荐冷启动 reasons 单一(只有 "完成社媒提取后可获得个性化匹配"),后续可补 1-2 条更友好的引导
+  - chensirui 持久人格回复较长(2-3 句),可在 demo 时观察是否需要在 prompt 控制长度
