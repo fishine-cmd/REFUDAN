@@ -11,3 +11,15 @@ tsconfig.tsbuildinfo
 
 # 本地 OAuth2 token 落地（demo 用，禁止提交）
 mentor_tokens.json
+
+# Python (profile-extraction 管线)
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+*.egg
+
+# Profile extraction 运行时数据
+services/profile-extraction/data/*.db
+services/profile-extraction/data/*.faiss
+services/profile-extraction/outputs/
