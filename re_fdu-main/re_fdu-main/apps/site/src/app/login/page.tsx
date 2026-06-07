@@ -33,62 +33,60 @@ export default function LoginPage() {
   }
 
   return (
-    <main style={{ maxWidth: 420, margin: "5rem auto", padding: "0 1.5rem" }}>
-      <h1 style={{ fontSize: "1.6rem", marginBottom: "0.25rem" }}>登录 RE:FUDAN</h1>
-      <p style={{ color: "var(--text-muted)", marginBottom: "1.5rem", fontSize: "0.85rem" }}>
-        6 个 demo 学长账号默认密码 <code>demo123</code>（详见 README）
-      </p>
-
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-        <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
-          <span style={{ fontSize: "0.8rem" }}>用户名</span>
-          <input
-            type="text"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            placeholder="例如 chenxiaoyuan"
-            autoComplete="username"
-            required
-            style={{ padding: "0.6rem 0.75rem", border: "1px solid var(--border-default, #888)", borderRadius: 4, background: "transparent", color: "inherit" }}
-          />
-        </label>
-        <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
-          <span style={{ fontSize: "0.8rem" }}>密码</span>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete="current-password"
-            required
-            style={{ padding: "0.6rem 0.75rem", border: "1px solid var(--border-default, #888)", borderRadius: 4, background: "transparent", color: "inherit" }}
-          />
-        </label>
-
-        {error && (
-          <p style={{ color: "rgb(239, 68, 68)", fontSize: "0.85rem", margin: 0 }}>{error}</p>
-        )}
-
-        <button
-          type="submit"
-          disabled={busy}
-          style={{
-            padding: "0.7rem 1rem",
-            borderRadius: 4,
-            border: "1px solid var(--accent, #7ECDC4)",
-            background: "var(--accent, #7ECDC4)",
-            color: "#000",
-            cursor: busy ? "wait" : "pointer",
-            fontWeight: 500,
-            opacity: busy ? 0.7 : 1,
-          }}
-        >
-          {busy ? "登录中..." : "登录"}
-        </button>
-
-        <p style={{ textAlign: "center", fontSize: "0.85rem", marginTop: "0.5rem" }}>
-          还没有账号？<a href="/signup" style={{ color: "var(--accent, #7ECDC4)" }}>去注册</a>
+    <main className="auth-shell">
+      <section className="auth-panel auth-panel--copy">
+        <p className="landing-eyebrow">Sign in</p>
+        <h1>回到你的工作台。</h1>
+        <p className="auth-copy">
+          登录后你会回到自己的 persona 工作区、推荐首页或收件箱。整个系统围绕“AI 先抵达，人后进入”来组织体验。
         </p>
-      </form>
+        <div className="auth-note">
+          <span>Demo note</span>
+          <strong>默认学长测试账号密码为 `demo123`</strong>
+        </div>
+      </section>
+
+      <section className="auth-panel auth-panel--form">
+        <div className="auth-panel__head">
+          <p className="landing-eyebrow">Account access</p>
+          <h2>登录 RE:FUDAN</h2>
+        </div>
+
+        <form className="auth-form" onSubmit={handleSubmit}>
+          <label className="auth-field">
+            <span>用户名</span>
+            <input
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="例如 chenxiaoyuan"
+              autoComplete="username"
+              required
+            />
+          </label>
+
+          <label className="auth-field">
+            <span>密码</span>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
+              required
+            />
+          </label>
+
+          {error ? <p className="auth-error">{error}</p> : null}
+
+          <button type="submit" disabled={busy} className="auth-submit">
+            {busy ? "登录中..." : "登录"}
+          </button>
+
+          <p className="auth-switch">
+            还没有账号？<a href="/signup">去注册</a>
+          </p>
+        </form>
+      </section>
     </main>
   );
 }

@@ -4,7 +4,7 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { listUsersByRole, toPublicUser } from "@/lib/users-redis";
-import { rankSeniors } from "@/lib/match";
+import { rankSeniors, type MatchIntent } from "@/lib/match";
 import { getRedis, K, MATCH_CACHE_TTL_SEC } from "@/lib/redis";
 
 export async function GET(req: NextRequest) {
@@ -18,19 +18,29 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const topN = Number(new URL(req.url).searchParams.get("topN") ?? "6") || 6;
+  const url = new URL(req.url);
+  const topN = Number(url.searchParams.get("topN") ?? "6") || 6;
+  const intent: MatchIntent = {
+    direction: url.searchParams.get("direction") ?? undefined,
+    question: url.searchParams.get("question") ?? undefined,
+  };
+  const hasIntent = !!intent.direction || !!intent.question;
   const r = getRedis();
-  // Upstash REST auto-deserializes JSON values, so a cached string may come
-  // back as an already-parsed object. Handle both shapes defensively.
-  const cached = await r.get<string | object>(K.matchCache(me.row.id));
-  if (cached) {
-    const parsed = typeof cached === "string" ? JSON.parse(cached) : cached;
-    return NextResponse.json(parsed);
+  const cacheKey = hasIntent
+    ? `${K.matchCache(me.row.id)}:${encodeURIComponent(`${intent.direction ?? ""}|${intent.question ?? ""}`)}`
+    : K.matchCache(me.row.id);
+
+  if (!hasIntent) {
+    const cached = await r.get<string | object>(cacheKey);
+    if (cached) {
+      const parsed = typeof cached === "string" ? JSON.parse(cached) : cached;
+      return NextResponse.json(parsed);
+    }
   }
 
   const seniors = await listUsersByRole("senior");
   const seniorMap = new Map(seniors.map((s) => [s.id, s]));
-  const results = rankSeniors(me.row, seniors, topN);
+  const results = rankSeniors(me.row, seniors, topN, intent);
 
   const recommendations = results
     .map((m) => {
@@ -45,9 +55,7 @@ export async function GET(req: NextRequest) {
     })
     .filter(Boolean);
 
-  const payload = { recommendations };
-  await r.set(K.matchCache(me.row.id), JSON.stringify(payload), {
-    ex: MATCH_CACHE_TTL_SEC,
-  });
+  const payload = { recommendations, intent };
+  await r.set(cacheKey, JSON.stringify(payload), { ex: MATCH_CACHE_TTL_SEC });
   return NextResponse.json(payload);
 }

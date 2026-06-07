@@ -14,9 +14,8 @@ const themeScript = `
 })();
 `;
 
-
 export const metadata: Metadata = {
-  title: "RE:FUDAN — 让经验先抵达",
+  title: "RE:FUDAN - 让经验先抵达",
   description:
     "A campus agent-native social system. Your agent meets them first. You follow when it matters.",
 };
@@ -32,23 +31,35 @@ export default function RootLayout({
         <Script id="re-fudan-theme-init" strategy="beforeInteractive">
           {themeScript}
         </Script>
-        <div className="frame">
-          <div className="frame__top">
-            <div className="frame__actions">
-              <a className="frame__button" href="/">
+        <div className="app-frame">
+          <header className="app-topbar">
+            <a className="app-brand" href="/">
+              <span className="app-brand__mark">RE:FUDAN</span>
+              <span className="app-brand__meta">Agent-native campus system</span>
+            </a>
+
+            <nav className="app-topbar__nav" aria-label="Primary">
+              <a className="app-topbar__link" href="/">
                 Overview
               </a>
-              <a className="frame__button" href="/agent-workbench">
+              <a className="app-topbar__link" href="/agent-workbench">
                 Workbench
               </a>
+              <a className="app-topbar__link" href="/me">
+                Dashboard
+              </a>
+            </nav>
+
+            <div className="app-topbar__side">
+              <div className="app-theme-pill">
+                <UserBadge />
+                <span>Theme</span>
+                <ThemeToggle />
+              </div>
             </div>
-            <div className="frame__theme">
-              <UserBadge />
-              <span>Theme</span>
-              <ThemeToggle />
-            </div>
-          </div>
-          <div className="frame__content">{children}</div>
+          </header>
+
+          <div className="app-frame__body">{children}</div>
         </div>
       </body>
     </html>

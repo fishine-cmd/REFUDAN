@@ -1,4 +1,3 @@
-// /chat/new?seniorId=... — 不创 chat,引导填首条问题
 "use client";
 
 import { Suspense, useState } from "react";
@@ -34,23 +33,34 @@ function NewChatForm() {
   }
 
   return (
-    <main className="me-shell">
-      <header className="me-hero">
-        <p className="me-eyebrow">新对话</p>
-        <h1>对 {seniorId} 说点什么</h1>
-        <p className="me-muted">你的第一句问题:</p>
-      </header>
-      <section className="me-section">
+    <main className="chat-compose-shell">
+      <section className="chat-compose-card">
+        <div className="chat-compose-card__head">
+          <p className="dashboard-eyebrow">New conversation</p>
+          <h1>先写下第一句真正值得问的问题。</h1>
+          <p className="dashboard-summary">
+            你的第一句提问会决定接下来这场 A2A 对话的方向。建议聚焦一个明确问题，而不是一次性问很多泛泛内容。
+          </p>
+        </div>
+
+        <div className="chat-compose-target">
+          <span>Target senior</span>
+          <strong>{seniorId || "未指定对象"}</strong>
+        </div>
+
         <textarea
-          className="me-search"
-          rows={5}
+          className="chat-compose-textarea"
+          rows={6}
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="想问的问题…"
+          placeholder="例如：如果我现在目标是保研到相关方向，你觉得我最该补的不是成绩，而是什么？"
         />
-        <button className="minimal-primary" disabled={busy || !q.trim()} onClick={send}>
-          {busy ? "发送中…" : "让我的 Agent 发问"}
-        </button>
+
+        <div className="chat-compose-actions">
+          <button className="dashboard-primary" disabled={busy || !q.trim()} onClick={send}>
+            {busy ? "发送中..." : "让我的 Agent 发问"}
+          </button>
+        </div>
       </section>
     </main>
   );
@@ -58,7 +68,7 @@ function NewChatForm() {
 
 export default function NewChatPage() {
   return (
-    <Suspense fallback={<main className="me-shell"><p>加载中…</p></main>}>
+    <Suspense fallback={<main className="chat-compose-shell"><p>加载中...</p></main>}>
       <NewChatForm />
     </Suspense>
   );
