@@ -19,15 +19,26 @@ export function AppShell({
 }>) {
   return (
     <main className="app-shell">
+      <div className="app-shell__ambient" aria-hidden="true" />
       <header className="app-shell__header">
-        <div>
-          <p className="app-shell__eyebrow">{eyebrow}</p>
+        <div className="app-shell__header-copy">
+          <div className="app-shell__eyebrow-row">
+            <p className="app-shell__eyebrow">{eyebrow}</p>
+            <span className="shell-pill">Walkthrough demo</span>
+          </div>
           <h1>{title}</h1>
           <p className="app-shell__summary">{summary}</p>
         </div>
-        <a className="back-link" href={siteUrl}>
-          Back to landing
-        </a>
+        <div className="app-shell__header-side">
+          <p className="app-shell__header-label">Narrative frame</p>
+          <p className="app-shell__header-note">
+            A structured prototype for showing privacy, protocol, and human handoff in one
+            coherent product surface.
+          </p>
+          <a className="back-link" href={siteUrl}>
+            Back to landing
+          </a>
+        </div>
       </header>
 
       <nav className="route-nav" aria-label="Flow routes">
@@ -37,8 +48,9 @@ export function AppShell({
             href={route.href}
             className={route.id === activeRoute ? "route-nav__item is-active" : "route-nav__item"}
           >
-            <span>{route.step}</span>
+            <span className="route-nav__step">{route.step}</span>
             <strong>{route.title}</strong>
+            <span className="route-nav__summary">{route.summary}</span>
           </Link>
         ))}
       </nav>

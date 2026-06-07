@@ -1,38 +1,171 @@
-# RE_FUDAN
+# RE:FUDAN（复见）
 
-Monorepo for the RE_FUDAN demo.
+> **让经验先抵达，答案再相见。**
+>
+> 一个面向复旦校园的 Agent-Native 社交演示系统：通过 SecondMe 数字分身，让授权学长学姐的经验先与学弟妹完成一轮 A2A（Agent-to-Agent）前哨对话，再决定是否真人引荐。
 
-## Layout
+**演示分支**：`feat/secondme-integration`
 
-- `apps/site` - canonical public landing experience
-- `apps/app` - product walkthrough shell
-- `packages/contracts` - shared domain types and demo payloads
-- `doc/` - preserved source/archive material
-- `landing/` - archived static prototype, reference only
+---
 
-## Landing Canon
+## 📍 评审快速通道
 
-- `apps/site` is the only active landing runtime.
-- `landing/` is preserved for historical reference and should not receive new
-  product work.
-- Hermes reverse assets are for token, font, and structure reference only.
-- Owned landing imagery comes from `apps/site/public/images/`.
-- Design system tokens and font files are already integrated into `apps/site/`.
-- See `.trellis/spec/frontend/design-system.md` for the token architecture.
+| 我要看 | 去哪 |
+|---|---|
+| 项目说明 / 系统设计 / 后续计划 | [`doc/01_项目说明书.md`](doc/01_项目说明书.md) |
+| Demo 演示视频（含场景脚本） | `doc/02_demo_video.mp4` + [`doc/03_demo视频说明.md`](doc/03_demo视频说明.md) |
+| 怎么把项目跑起来 | [`doc/05_代码运行说明.md`](doc/05_代码运行说明.md) |
+| SecondMe API 接入技术设计 | [`doc/secondme-integration-design.md`](doc/secondme-integration-design.md) |
+| 未来扩展 / 接手开发备忘 | [`doc/HANDOFF.md`](doc/HANDOFF.md) |
 
-## Stack
+> **注意目录结构**：本仓库由上游 zip 解压生成，实际代码在双层嵌套 `re_fdu-main/re_fdu-main/` 内。本 README 位于真正的项目根，所有相对路径以此为准。从 GitHub 浏览时直接进入这一层即可。
 
-- TypeScript
-- Bun for workspace scripts
-- Next.js App Router
-- Tailwind CSS v3 for `apps/site`
-- Mock-first contracts, no mandatory database for MVP
+---
 
-## Local Run
+## 🚀 三分钟跑起来
 
-- `bun install`
-- `bun --cwd apps/site run dev`
-- `bun --cwd apps/app run dev`
+> **Windows 用户偷懒**：项目根有 `启动.bat`，双击即可完成下面所有步骤（Bun 自动装、依赖检查、Python 检查、Edge CDP 启动、双前端起飞）。命令行流程在下方供其他平台参考。
 
-Set `NEXT_PUBLIC_APP_URL` and `NEXT_PUBLIC_SITE_URL` if you deploy the two apps
-to different origins later.
+### 环境
+
+| 组件 | 最低版本 | 备注 |
+|---|---|---|
+| Bun | 1.3 | 前端 |
+| Node.js | 20 | |
+| Git | 2.30 | |
+| **Python** | **3.12** | **社媒画像提取，可选；启动.bat 会检测并装依赖** |
+| **Edge** | 当前版 | **XHS/知乎/LinkedIn 提取需要,GitHub REST 不需要** |
+
+### 步骤
+
+```bash
+# 1. clone（如果还没拉）
+git clone https://github.com/fishine-cmd/REFUDAN.git
+cd REFUDAN/re_fdu-main/re_fdu-main
+
+# 2. 装依赖
+bun install
+
+# 3. 配 .env.local（最少配 DeepSeek API key 即可）
+cp apps/site/.env.example apps/site/.env.local
+# 编辑该文件,设置 DEEPSEEK_API_KEY=sk-xxx
+# 可选: GITHUB_TOKEN=ghp_xxx 提升 GitHub API 速率到 5000/h
+
+# 4. 启动主演示
+cd apps/site
+bun run dev
+# 浏览器打开 http://localhost:3000
+```
+
+首次访问会自动创建 `apps/site/data/users.db` 并 seed 6 个 demo 学长账号。
+
+### Demo 账号
+
+6 个学长账号统一密码 `demo123`：
+
+| 用户名 | 显示名 |
+|---|---|
+| chensirui | 陈思睿 |
+| chenxiaoyuan | 陈晓远 |
+| sunyifan | 孙逸凡 |
+| weixuejie | 魏雪洁 |
+| wuzihan | 吴子涵 |
+| zhangmingyuan | 张明远 |
+
+学弟身份请走 `/signup` 自助注册（开放注册，选"学弟"角色）。
+
+> 重置 DB：删除 `apps/site/data/users.db` 后下次 dev 启动自动重新 seed。
+
+### 演示路径
+
+```
+http://localhost:3000               落地页（含登录/注册入口）
+http://localhost:3000/login         登录
+http://localhost:3000/signup        注册（选学长/学弟）
+http://localhost:3000/mentors       学弟浏览推荐学长（雷达图）
+http://localhost:3000/agent-workbench 个人画像提取 + 与"我的 Agent"或学长对话
+```
+
+完整运行 / 排错指南：[`doc/05_代码运行说明.md`](doc/05_代码运行说明.md)
+
+### 社媒画像提取（XHS 首次登录）
+
+GitHub 走公开 REST 不需要登录；XHS（小红书）大部分内容必须登录才能看到。**一次性**操作：
+
+1. 项目跑起来后，双击 `services/profile-extraction/xhs_login.bat`
+2. 自动弹出 Chromium 窗口，打开小红书
+3. 在窗口里**扫码或输入账号密码登录**
+4. 完成后回到 cmd 窗口按 **Enter**
+5. cookie 自动持久化到 `services/profile-extraction/data/browser_profile/`
+
+之后用 `/agent-workbench` 填 XHS ID 时，Python 管线自动用 headless Chromium 复用这套登录态。Cookie 过期时前端会清楚提示重跑 `xhs_login.bat`。
+
+GitHub 用户名可选：`apps/site/.env.local` 加一行 `GITHUB_TOKEN=ghp_...` 把匿名速率 60/h 升到 5000/h（去 https://github.com/settings/tokens 生成，全部 scope 不勾即可）。
+
+---
+
+## 🧩 项目结构
+
+```
+re_fdu-main/re_fdu-main/                ← 真正的项目根（README 所在地）
+├── apps/
+│   ├── site/                           ← 主演示应用（端口 3000）
+│   │   ├── src/
+│   │   │   ├── app/
+│   │   │   │   ├── page.tsx                       落地页
+│   │   │   │   ├── mentors/page.tsx               学弟妹浏览
+│   │   │   │   ├── mentor-onboard/page.tsx        学长授权管理
+│   │   │   │   ├── agent-workbench/page.tsx       A2A 对话工作台
+│   │   │   │   └── api/
+│   │   │   │       ├── chat/route.ts              SecondMe / 兜底智能分发
+│   │   │   │       ├── mentors/route.ts           mentor 列表
+│   │   │   │       └── auth/secondme/             OAuth2 四路由
+│   │   │   ├── lib/secondme.ts                    SecondMe 客户端
+│   │   │   └── data/mentors/                      6 份学长 JSON（含 consent 字段）
+│   │   ├── .env.example                           环境变量模板
+│   │   └── .env.local                             本地配置（gitignore）
+│   └── app/                            ← 架构示意（次要）
+├── packages/contracts/                 ← 共享 TS 类型 + YAML 接口
+├── doc/                                ← 所有文档（提交材料 + 设计稿）
+└── scripts/
+    └── package-submission.mjs          ← 一键打包中期材料 ZIP
+```
+
+---
+
+## 🏛️ 技术栈
+
+- **运行时**：Bun 1.3 + Node.js 20+
+- **前端**：Next.js 15 (App Router) + React 19 + Tailwind CSS 3
+- **类型**：TypeScript 5.8 (strict)
+- **AI 后端**：SecondMe API（主，OAuth2 + SSE 流式） + DeepSeek（兜底）
+- **认证**：OAuth2 Authorization Code Flow + CSRF state 校验
+- **本地存储**：mentor JSON（静态）+ mentor_tokens.json（OAuth2 token，gitignore）
+
+---
+
+## 🔐 数据合规（项目灵魂）
+
+| 原则 | 实现 |
+|---|---|
+| 本人授权 | 6 位学长学姐已书面授权，`consent_status: granted` |
+| 数据最小化 | OAuth2 仅申请 `userinfo` + `chat.write` + `memory.read` 三个 scope |
+| 可撤回 | `/api/auth/secondme/revoke` + UI 一键撤销 |
+| 输出标识 | `/agent-workbench` 顶部合规水印：「AI 助手代为表达，非本人直接发言」 |
+| 来源透明 | 演示绑定项目方账号的 mentor 卡片有橙色提示框，明确标识 |
+
+详见 [`doc/01_项目说明书.md` 第 5 章](doc/01_项目说明书.md)。
+
+---
+
+## 📞 联系
+
+- 项目仓库：https://github.com/fishine-cmd/REFUDAN
+- 原始仓库：https://github.com/Wesleyyyyyy/REFUDAN
+- 中期评审材料邮箱：`FudanAICS@163.com`
+
+---
+
+## 📜 License
+
+MIT，见 [`LICENSE`](LICENSE)。

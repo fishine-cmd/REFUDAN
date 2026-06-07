@@ -3,9 +3,21 @@
   "name": "陈晓远",
   "title": "CS · 23届保研 · NLP方向",
   "avatar": "/images/cxy.jpg",
-  "scores": [92, 88, 86, 79],
-  "tags": ["同届竞赛", "NLP", "夏令营"],
-  "badges": ["资料齐全", "高匹配"],
+  "scores": [
+    92,
+    88,
+    86,
+    79
+  ],
+  "tags": [
+    "同届竞赛",
+    "NLP",
+    "夏令营"
+  ],
+  "badges": [
+    "资料齐全",
+    "高匹配"
+  ],
   "highlight": "同届竞赛经历 + 相同导师研究线，面试关注点高度一致。",
   "persona": {
     "name": "陈晓远",
@@ -19,7 +31,17 @@
       "degree": "保研 NLP方向研究生",
       "graduation_year": "2023"
     },
-    "skills": ["NLP研究", "夏令营面试", "竞赛经验", "保研材料准备"],
-    "topics": ["cs", "nlp", "summer_camp", "graduate_application"]
+    "skills": [
+      "NLP研究",
+      "夏令营面试",
+      "竞赛经验",
+      "保研材料准备"
+    ],
+    "topics": [
+      "cs",
+      "nlp",
+      "summer_camp",
+      "graduate_application"
+    ]
   }
 }

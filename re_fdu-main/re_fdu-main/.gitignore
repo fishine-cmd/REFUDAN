@@ -6,3 +6,27 @@ coverage
 .turbo
 .env
 .env.*
+!.env.example
+tsconfig.tsbuildinfo
+
+# 本地 OAuth2 token 落地（demo 用，禁止提交）
+mentor_tokens.json
+
+# Python (profile-extraction 管线)
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+*.egg
+
+# Profile extraction 运行时数据
+services/profile-extraction/data/*.db
+services/profile-extraction/data/*.faiss
+services/profile-extraction/data/browser_profile/
+services/profile-extraction/outputs/
+
+# 多用户运行时数据库（含密码 hash, 严禁提交）
+apps/site/data/users.db
+apps/site/data/users.db-journal
+apps/site/data/users.db-wal
+apps/site/data/users.db-shm
