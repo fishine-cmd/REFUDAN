@@ -126,6 +126,13 @@ function getReferralStageLabel(session: SessionDetail) {
   return "P4 待准备";
 }
 
+function shouldContinueAutoplay(state?: AutoplayState | null) {
+  if (!state) return false;
+  if (!state.enabled) return false;
+  if (state.done) return false;
+  return state.status !== "completed" && state.status !== "degraded";
+}
+
 export default function A2ASessionPage() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const searchParams = useSearchParams();
@@ -136,6 +143,7 @@ export default function A2ASessionPage() {
   const [busy, setBusy] = useState(false);
   const [handoffBusy, setHandoffBusy] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const autoplayStartedRef = useRef(false);
 
   async function loadAll() {
     const [meRes, sessionRes] = await Promise.all([
@@ -143,9 +151,12 @@ export default function A2ASessionPage() {
       fetch(`/api/a2a/sessions/${sessionId}`).then((r) => r.json()),
     ]);
     const user = meRes?.user ?? meRes;
-    setViewer(user ? { id: user.id, displayName: user.displayName, role: user.role } : null);
-    setSession(sessionRes?.sessionId ? sessionRes : null);
+    const nextViewer = user ? { id: user.id, displayName: user.displayName, role: user.role } : null;
+    const nextSession = sessionRes?.sessionId ? (sessionRes as SessionDetail) : null;
+    setViewer(nextViewer);
+    setSession(nextSession);
     setNote(sessionRes?.handoff?.note ?? "");
+    return { viewer: nextViewer, session: nextSession };
   }
 
   useEffect(() => {
@@ -155,6 +166,20 @@ export default function A2ASessionPage() {
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [session?.turns.length]);
+
+  useEffect(() => {
+    if (!viewer || !session) return;
+    if (viewer.role !== "junior") return;
+    if (!shouldContinueAutoplay(session.autoplayState)) return;
+    if (autoplayStartedRef.current) return;
+
+    autoplayStartedRef.current = true;
+    runAutoplayLoop(session.autoplayState)
+      .catch(() => {})
+      .finally(() => {
+        autoplayStartedRef.current = false;
+      });
+  }, [session, viewer]);
 
   const isJunior = viewer?.role === "junior";
   const cameFromCreated = searchParams.get("from") === "created";
@@ -168,6 +193,26 @@ export default function A2ASessionPage() {
       return true;
     });
   }, [session, viewer]);
+
+  async function runAutoplayLoop(initialState?: AutoplayState | null) {
+    let currentState = initialState;
+
+    while (shouldContinueAutoplay(currentState)) {
+      const response = await fetch(`/api/a2a/sessions/${sessionId}/autoplay`, {
+        method: "POST",
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error ?? "Autoplay failed");
+      }
+      currentState = (data?.autoplayState as AutoplayState | undefined) ?? currentState;
+      await loadAll();
+
+      if (shouldContinueAutoplay(currentState)) {
+        await new Promise((resolve) => window.setTimeout(resolve, 350));
+      }
+    }
+  }
 
   async function sendFollowUp() {
     if (!question.trim() || !session || !isJunior) return;
@@ -184,7 +229,11 @@ export default function A2ASessionPage() {
         return;
       }
       setQuestion("");
-      await loadAll();
+      const latest = await loadAll();
+      const autoplayState = latest.session?.autoplayState ?? (data?.autoplayState as AutoplayState | undefined);
+      if (shouldContinueAutoplay(autoplayState)) {
+        await runAutoplayLoop(autoplayState);
+      }
     } finally {
       setBusy(false);
     }

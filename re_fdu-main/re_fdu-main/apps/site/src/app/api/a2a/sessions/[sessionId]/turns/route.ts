@@ -2,7 +2,10 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth";
-import { createOrContinueA2ASession, getA2ASessionForViewer } from "@/lib/a2a-chat";
+import {
+  createOrContinueA2ASession,
+  getA2ASessionForViewer,
+} from "@/lib/a2a-chat";
 
 export async function POST(
   req: NextRequest,
@@ -43,7 +46,9 @@ export async function POST(
       question: body.question,
       sessionId,
     });
-    return NextResponse.json(result);
+    return NextResponse.json({
+      ...result,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });
