@@ -81,6 +81,84 @@ type ChatProgress = {
   label: string;
 };
 
+type ProfileEditorMode = "create" | "overview" | "rebuild" | "enrich";
+
+type ProfileInsights = {
+  source: "ai" | "fallback";
+  headline: string;
+  summary: string;
+  personality: string[];
+  interests: string[];
+  motivations: string[];
+  communicationStyle: string[];
+  strengths: string[];
+  suggestedTopics: string[];
+  caution: string;
+  evidence: string[];
+};
+
+type ProfileStatCard = {
+  label: string;
+  value: string;
+};
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function firstText(value: unknown): string {
+  if (typeof value === "string") return value.trim();
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      if (typeof item === "string" && item.trim()) return item.trim();
+    }
+  }
+  return "";
+}
+
+function toStringArray(value: unknown, limit = 8): string[] {
+  if (!Array.isArray(value)) return [];
+  const cleaned = value
+    .map((item) => {
+      if (typeof item === "string") return item.trim();
+      if (item == null) return "";
+      return String(item).trim();
+    })
+    .filter(Boolean);
+  return [...new Set(cleaned)].slice(0, limit);
+}
+
+function getBuiltProfileStatCards(builtProfile: Record<string, unknown> | null): ProfileStatCard[] {
+  if (!builtProfile) return [];
+  const basic = asRecord(builtProfile.basic_info);
+  const sources = asRecord(builtProfile.sources);
+  const platforms = toStringArray(builtProfile.platforms_used, 4);
+  const fallbackPlatforms = toStringArray(basic.platforms, 4);
+  const confidence =
+    typeof builtProfile.confidence === "number"
+      ? `${Math.round(builtProfile.confidence * 100)}%`
+      : "TBD";
+  const displayName = firstText(basic.display_name) || "Current profile";
+  const noteCount =
+    typeof sources.notes_collected === "number"
+      ? `${sources.notes_collected} posts`
+      : "Unknown";
+  const bodyCount =
+    typeof sources.notes_with_body === "number"
+      ? `${sources.notes_with_body} bodies`
+      : "Unknown";
+
+  return [
+    { label: "Profile", value: displayName },
+    { label: "Platforms", value: (platforms.length > 0 ? platforms : fallbackPlatforms).join(" / ") || "Unknown" },
+    { label: "Samples", value: noteCount },
+    { label: "Body Coverage", value: bodyCount },
+    { label: "Confidence", value: confidence },
+  ];
+}
+
 const navItems: { id: SectionId; title: string; description: string }[] = [
   { id: "profile", title: "个人档案", description: "实时查看与编辑 AI 自动提取的档案信息。" },
   { id: "match", title: "需求匹配", description: "调整核心诉求后自动匹配路径相似的 Agent。" },
@@ -200,6 +278,9 @@ function AgentWorkbenchInner() {
   const [builtProfile, setBuiltProfile] = useState<Record<string, unknown> | null>(null);
   const [agentProfile, setAgentProfile] = useState<AgentProfileData | null>(null);
   const [hasAgent, setHasAgent] = useState(false);
+  const [profileEditorMode, setProfileEditorMode] = useState<ProfileEditorMode>("create");
+  const [profileInsights, setProfileInsights] = useState<ProfileInsights | null>(null);
+  const [insightsState, setInsightsState] = useState<"idle" | "loading" | "ready" | "error">("idle");
 
   const [knowledgeItems, setKnowledgeItems] = useState([
     { id: "k1", title: "夏令营面试笔记.pdf", source: "本地上传", privacy: "公开" },
@@ -247,7 +328,12 @@ function AgentWorkbenchInner() {
           if (ap.accounts?.zhihuId) setZhihuId(ap.accounts.zhihuId);
           if (ap.knowledgeItems?.length) setKnowledgeItems(ap.knowledgeItems);
         }
-        if (data?.hasAgent) setHasAgent(true);
+        if (data?.hasAgent) {
+          setHasAgent(true);
+          setProfileEditorMode("overview");
+        } else {
+          setProfileEditorMode("create");
+        }
       } catch {}
     })();
     return () => {
@@ -300,6 +386,44 @@ function AgentWorkbenchInner() {
     };
   }, [isGenerating]);
 
+  useEffect(() => {
+    if (!builtProfile) {
+      setProfileInsights(null);
+      setInsightsState("idle");
+      return;
+    }
+
+    let cancelled = false;
+    const controller = new AbortController();
+
+    setInsightsState("loading");
+    fetch("/api/profile/insights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ builtProfile }),
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const data = (await response.json().catch(() => ({}))) as { insights?: ProfileInsights };
+        if (cancelled) return;
+        if (response.ok && data.insights) {
+          setProfileInsights(data.insights);
+          setInsightsState("ready");
+          return;
+        }
+        setInsightsState("error");
+      })
+      .catch(() => {
+        if (!cancelled) setInsightsState("error");
+      });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [builtProfile]);
+
   const activeContact = useMemo(
     () => contacts.find((contact) => contact.id === activeId) ?? contacts[0] ?? selfContact,
     [activeId, contacts],
@@ -311,13 +435,19 @@ function AgentWorkbenchInner() {
   const messages = conversationState[activeContact.id] ?? [];
   const activeChatProgress = chatProgress[activeContact.id] ?? { busy: false, label: "" };
   const isChatLoading = activeChatProgress.busy;
-  const builtProfilePreview = useMemo(() => {
-    if (!builtProfile) return [];
-    return Object.entries(builtProfile).slice(0, 6);
-  }, [builtProfile]);
+  const builtProfileStatCards = useMemo(() => getBuiltProfileStatCards(builtProfile), [builtProfile]);
   const profileCompletion = [resumeFileName || resumeText.trim(), school, major, gpa, goal].filter(Boolean).length;
   const profileReadiness = Math.round((profileCompletion / 5) * 100);
   const platformCount = [githubUser, xhsId, linkedinUrl, zhihuId].filter((value) => value.trim()).length;
+  const isRebuildMode = profileEditorMode === "rebuild";
+  const isEnrichMode = profileEditorMode === "enrich";
+  const currentSubmitLabel = !hasAgent
+    ? "生成我的 Agent"
+    : isRebuildMode
+      ? "确认更新 Agent 信息"
+      : isEnrichMode
+        ? "确认新增资料"
+        : "更新 Agent 信息";
 
   const updateChatProgress = useCallback((contactId: string, patch: Partial<ChatProgress>) => {
     setChatProgress((prev) => ({
@@ -537,6 +667,7 @@ function AgentWorkbenchInner() {
   };
 
   const handleGenerate = async () => {
+    const hadExistingAgent = hasAgent;
     const accounts = collectPlatformAccounts();
 
     // 统一校验:核心标准化信息必填;简历与外部账号至少有其一作为画像来源。
@@ -560,9 +691,19 @@ function AgentWorkbenchInner() {
     const buildWarnings: string[] = [];
 
     try {
+      if (hadExistingAgent && profileEditorMode === "rebuild") {
+        await Promise.all([
+          fetch("/api/profile/agent", { method: "DELETE", credentials: "same-origin" }),
+          fetch("/api/profile/me", { method: "DELETE", credentials: "same-origin" }),
+        ]);
+        setBuiltProfile(null);
+        setProfileInsights(null);
+      }
+
       // 1) 有外部账号 → 跑社交画像合成管线,得到 builtProfile。
       if (accounts.length > 0) {
         setBuiltProfile(null);
+        setProfileInsights(null);
         try {
           const res = await fetch("/api/profile/build", {
             method: "POST",
@@ -614,9 +755,10 @@ function AgentWorkbenchInner() {
       const saved = await saveRes.json();
 
       if (saveRes.ok && saved.agentProfile) {
-        const wasUpdate = hasAgent;
+        const wasUpdate = hadExistingAgent;
         setAgentProfile(saved.agentProfile as AgentProfileData);
         setHasAgent(true);
+        setProfileEditorMode("overview");
         if (buildWarnings.length > 0) {
           setErrors(buildWarnings);
         }
@@ -768,6 +910,21 @@ function AgentWorkbenchInner() {
                     </div>
                   ) : null}
                 </div>
+                <div className="profile-action-row">
+                  <button type="button" className="wb-inline-button" onClick={() => setProfileEditorMode("rebuild")}>
+                    重建 Agent
+                  </button>
+                  <button type="button" className="wb-inline-button" onClick={() => setProfileEditorMode("enrich")}>
+                    新增资料
+                  </button>
+                </div>
+                {(isRebuildMode || isEnrichMode) ? (
+                  <p className="profile-mode-hint">
+                    {isRebuildMode
+                      ? "当前是重建模式，提交后会删除旧 Agent 并用当前信息重建。"
+                      : "当前是新增资料模式，新的社媒和资料会补充到现有 Agent。"}
+                  </p>
+                ) : null}
               </section>
             ) : null}
 
@@ -786,6 +943,8 @@ function AgentWorkbenchInner() {
                         await fetch("/api/profile/me", { method: "DELETE", credentials: "same-origin" });
                       } catch {}
                       setBuiltProfile(null);
+                      setProfileInsights(null);
+                      setInsightsState("idle");
                     }}
                   >
                     清除画像
@@ -796,14 +955,80 @@ function AgentWorkbenchInner() {
               {builtProfile ? (
                 <>
                   <div className="profile-summary-grid">
-                    {builtProfilePreview.map(([key, value]) => (
-                      <div key={key} className="profile-summary-card">
-                        <span>{key}</span>
-                        <strong>{typeof value === "object" ? "结构化数据" : String(value)}</strong>
+                    {builtProfileStatCards.map((item) => (
+                      <div key={item.label} className="profile-summary-card">
+                        <span>{item.label}</span>
+                        <strong>{item.value}</strong>
                       </div>
                     ))}
                   </div>
-                  <pre className="wb-json-preview">{JSON.stringify(builtProfile, null, 2)}</pre>
+                  {insightsState === "loading" ? (
+                    <p className="workbench-chat__empty">AI 正在整理这个用户的性格喜好与表达方式…</p>
+                  ) : profileInsights ? (
+                    <div className="profile-insights-grid">
+                      <article className="profile-insight-card profile-insight-card--hero">
+                        <span className="profile-insight-badge">{profileInsights.source === "ai" ? "AI 解读" : "画像归纳"}</span>
+                        <h4>{profileInsights.headline}</h4>
+                        <p>{profileInsights.summary}</p>
+                      </article>
+                      <article className="profile-insight-card">
+                        <h4>性格气质</h4>
+                        <div className="profile-chip-row">
+                          {profileInsights.personality.map((item) => (
+                            <span key={item} className="profile-chip">{item}</span>
+                          ))}
+                        </div>
+                      </article>
+                      <article className="profile-insight-card">
+                        <h4>兴趣偏好</h4>
+                        <div className="profile-chip-row">
+                          {profileInsights.interests.map((item) => (
+                            <span key={item} className="profile-chip">{item}</span>
+                          ))}
+                        </div>
+                      </article>
+                      <article className="profile-insight-card">
+                        <h4>近期动机</h4>
+                        <div className="profile-chip-row">
+                          {profileInsights.motivations.map((item) => (
+                            <span key={item} className="profile-chip">{item}</span>
+                          ))}
+                        </div>
+                      </article>
+                      <article className="profile-insight-card">
+                        <h4>表达方式</h4>
+                        <div className="profile-chip-row">
+                          {profileInsights.communicationStyle.map((item) => (
+                            <span key={item} className="profile-chip">{item}</span>
+                          ))}
+                        </div>
+                      </article>
+                      <article className="profile-insight-card">
+                        <h4>可能优势</h4>
+                        <div className="profile-chip-row">
+                          {profileInsights.strengths.map((item) => (
+                            <span key={item} className="profile-chip">{item}</span>
+                          ))}
+                        </div>
+                      </article>
+                      <article className="profile-insight-card">
+                        <h4>适合继续补充的话题</h4>
+                        <div className="profile-chip-row">
+                          {profileInsights.suggestedTopics.map((item) => (
+                            <span key={item} className="profile-chip">{item}</span>
+                          ))}
+                        </div>
+                      </article>
+                      <article className="profile-insight-card">
+                        <h4>谨慎说明</h4>
+                        <p>{profileInsights.caution}</p>
+                      </article>
+                    </div>
+                  ) : null}
+                  <details className="profile-raw-toggle">
+                    <summary>查看原始结构化数据</summary>
+                    <pre className="wb-json-preview">{JSON.stringify(builtProfile, null, 2)}</pre>
+                  </details>
                 </>
               ) : (
                 <p className="workbench-chat__empty">
@@ -921,7 +1146,7 @@ function AgentWorkbenchInner() {
               onClick={handleGenerate}
               disabled={isGenerating}
             >
-              {isGenerating ? "处理中…" : hasAgent ? "更新 Agent 信息" : "生成我的 Agent"}
+              {isGenerating ? "处理中…" : currentSubmitLabel}
             </button>
           </footer>
         </section>

@@ -788,6 +788,52 @@ export async function advanceA2AAutoplaySession(input: {
   }
 }
 
+export async function runA2AAutoplayToCompletion(input: {
+  juniorId: string;
+  sessionId: string;
+  maxSteps?: number;
+}): Promise<A2AAutoplayAdvanceResult | null> {
+  const meta = await getChatMeta(input.sessionId);
+  if (!meta || meta.juniorId !== input.juniorId) {
+    throw new Error("session not found");
+  }
+  if (!meta.autoplayState.enabled) {
+    return null;
+  }
+
+  const initialBundle = await loadSessionBundle(input.sessionId);
+  if (!initialBundle) {
+    throw new Error("session not found");
+  }
+
+  if (initialBundle.autoplayState.done || initialBundle.autoplayState.status === "completed") {
+    return {
+      sessionId: input.sessionId,
+      done: true,
+      round: initialBundle.autoplayState.round,
+      coveredSlots: initialBundle.autoplayState.coveredSlots,
+      autoplayState: initialBundle.autoplayState,
+      latestAssessment: initialBundle.assessment,
+    };
+  }
+
+  const safetyLimit =
+    input.maxSteps ?? Math.max(1, meta.autoplayState.maxRounds || DEFAULT_AUTOPLAY_MAX_ROUNDS);
+
+  let latest: A2AAutoplayAdvanceResult | null = null;
+  for (let step = 0; step < safetyLimit; step += 1) {
+    latest = await advanceA2AAutoplaySession({
+      juniorId: input.juniorId,
+      sessionId: input.sessionId,
+    });
+    if (latest.done) {
+      return latest;
+    }
+  }
+
+  return latest;
+}
+
 export async function getA2ASessionForViewer(sessionId: string): Promise<A2ASessionViewer | null> {
   const detail = await getA2ASessionDetail(sessionId);
   if (!detail) return null;

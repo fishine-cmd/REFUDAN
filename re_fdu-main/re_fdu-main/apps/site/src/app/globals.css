@@ -3523,6 +3523,91 @@ a:hover {
   color: var(--accent);
 }
 
+.workbench--legacy .profile-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+}
+
+.workbench--legacy .profile-mode-hint {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.7;
+}
+
+.workbench--legacy .profile-insights-grid {
+  display: grid;
+  gap: 0.9rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.workbench--legacy .profile-insight-card {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  background: var(--bg-surface);
+}
+
+.workbench--legacy .profile-insight-card h4 {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.workbench--legacy .profile-insight-card p {
+  font-size: 0.78rem;
+  line-height: 1.7;
+  color: var(--text-body);
+}
+
+.workbench--legacy .profile-insight-card--hero {
+  grid-column: 1 / -1;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent) 10%, transparent), transparent 140%),
+    var(--bg-surface);
+}
+
+.workbench--legacy .profile-insight-badge {
+  display: inline-flex;
+  width: fit-content;
+  padding: 0.25rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  color: var(--accent);
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.workbench--legacy .profile-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.workbench--legacy .profile-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.32rem 0.68rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-default);
+  background: color-mix(in srgb, var(--bg-canvas) 16%, var(--bg-surface));
+  color: var(--accent);
+  font-size: 0.68rem;
+}
+
+.workbench--legacy .profile-raw-toggle {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.workbench--legacy .profile-raw-toggle summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+}
+
 .workbench--legacy .profile-success {
   border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
   background: color-mix(in srgb, var(--accent) 10%, transparent);

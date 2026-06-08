@@ -53,6 +53,17 @@ interface ComposerState {
   progressLabel: string;
 }
 
+interface AutoplayState {
+  enabled?: boolean;
+  status?: "idle" | "running" | "completed" | "degraded";
+  round?: number;
+  maxRounds?: number;
+  coveredSlots?: string[];
+  currentSlot?: string;
+  done?: boolean;
+  lastError?: string;
+}
+
 const axes = ["院校匹配", "专业匹配", "目标重合", "经历相似"] as const;
 const directionOptions = [
   "保研 / 夏令营策略",
@@ -88,6 +99,13 @@ function verdictLabel(verdict?: string | null) {
     default:
       return "";
   }
+}
+
+function shouldContinueAutoplay(state?: AutoplayState | null) {
+  if (!state) return false;
+  if (state.enabled === false) return false;
+  if (state.done) return false;
+  return state.status !== "completed" && state.status !== "degraded";
 }
 
 export default function JuniorHome() {
@@ -216,14 +234,18 @@ export default function JuniorHome() {
         return;
       }
 
-      let done = created?.autoplayState?.done ?? false;
-      let round = created?.autoplayState?.round ?? 1;
-      let covered = created?.autoplayState?.coveredSlots ?? [];
+      const detailResponse = await fetch(`/api/a2a/sessions/${created.sessionId}`);
+      const detail = detailResponse.ok ? await detailResponse.json() : null;
+      let currentAutoplayState: AutoplayState | null = detail?.autoplayState ?? created?.autoplayState ?? null;
+
+      let done = currentAutoplayState?.done ?? false;
+      let round = currentAutoplayState?.round ?? 1;
+      let covered = currentAutoplayState?.coveredSlots ?? [];
       updateComposer(recommendation.senior.id, {
         progressLabel: `A2A 第 ${round} 轮进行中，已确认 ${covered.length}/5 个槽位`,
       });
 
-      while (!done) {
+      while (shouldContinueAutoplay(currentAutoplayState)) {
         const autoplayResponse = await fetch(`/api/a2a/sessions/${created.sessionId}/autoplay`, {
           method: "POST",
         });
@@ -238,6 +260,13 @@ export default function JuniorHome() {
         done = !!advanced.done;
         round = advanced.round ?? round;
         covered = advanced.coveredSlots ?? covered;
+        currentAutoplayState = {
+          ...(currentAutoplayState ?? {}),
+          ...(advanced?.autoplayState ?? {}),
+          done,
+          round,
+          coveredSlots: covered,
+        };
         updateComposer(recommendation.senior.id, {
           progressLabel: done
             ? `A2A 已完成，共 ${round} 轮，覆盖 ${covered.length}/5 个槽位`
