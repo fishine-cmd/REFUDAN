@@ -2,28 +2,29 @@
 setlocal
 cd /d "%~dp0"
 
-title XHS 登录
+title XHS Login
 
 echo.
 echo ========================================
-echo   XHS 小红书 一次性登录
+echo   XHS Xiaohongshu Chrome/CDP Login
 echo ========================================
 echo.
-echo 这一步只需做一次。完成后,后续抓取自动复用登录态。
+echo This step usually only needs to be done once.
+echo Later collections will reuse the same real Chrome profile.
 echo.
-echo 流程:
-echo   1. 自动打开 Chromium 浏览器
-echo   2. 在打开的窗口里扫码或输入账号密码登录
-echo   3. 完成登录后,回到本窗口按 Enter
-echo   4. cookie 自动保存到 data\browser_profile\
+echo Flow:
+echo   1. Open a real Chrome window with CDP enabled
+echo   2. Finish login / QR scan / captcha on the Xiaohongshu homepage
+echo   3. The script verifies homepage UI, cookie, and login state first
+echo   4. Real profile collection only starts after login is confirmed
 echo.
-echo --------- Python 输出开始 ---------
+echo --------- Python output begins ---------
 echo.
 
-python run_pipeline.py --xhs-login
+python xhs_login.py
 
 echo.
-echo --------- Python 输出结束 ---------
+echo --------- Python output ends ---------
 echo.
 pause
 endlocal

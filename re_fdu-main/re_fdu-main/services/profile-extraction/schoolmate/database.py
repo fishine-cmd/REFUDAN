@@ -410,53 +410,25 @@ class ProfileDatabase:
     def _merge_profiles(old: dict, new: dict) -> dict:
         """Merge two profile dicts — new data augments old (incremental enrichment)."""
         merged = dict(old)
+        merged.update(new)
 
-        # Merge content_topics (deduplicate by topic name)
-        old_topics = {t.get("topic"): t for t in old.get("content_topics", [])}
-        for t in new.get("content_topics", []):
-            topic_name = t.get("topic", "")
-            if topic_name and topic_name not in old_topics:
-                old_topics[topic_name] = t
-        merged["content_topics"] = list(old_topics.values())
-
-        # Merge inferred signals (extend lists, deduplicate)
-        for signal_key in ["skills_inferred", "interests", "industry_signals", "content_roles"]:
-            old_items = set(
-                (s if isinstance(s, str) else s.get("role", ""))
-                for s in old.get("inferred_signals", {}).get(signal_key, [])
-            )
-            new_items = new.get("inferred_signals", {}).get(signal_key, [])
-            for item in new_items:
-                key = item if isinstance(item, str) else item.get("role", "")
-                if key and key not in old_items:
-                    old_items.add(key)
-                    merged.setdefault("inferred_signals", {}).setdefault(signal_key, []).append(item)
-
-        # Merge career domains
-        old_domains = set(old.get("inferred_signals", {}).get("career_domains", {}).keys())
-        new_domains = new.get("inferred_signals", {}).get("career_domains", {})
-        for domain, info in new_domains.items():
-            if domain not in old_domains:
-                merged.setdefault("inferred_signals", {}).setdefault("career_domains", {})[domain] = info
-
-        # Merge platform_profiles
-        old_pps = old.get("platform_profiles", {})
-        new_pps = new.get("platform_profiles", {})
-        for plat, plat_profile in new_pps.items():
-            if plat not in old_pps:
-                old_pps[plat] = plat_profile
-        merged["platform_profiles"] = old_pps
-
-        # Update confidence (take max)
-        merged["confidence"] = max(old.get("confidence", 0), new.get("confidence", 0))
-
-        # Merge platforms_used
         old_plats = set(old.get("platforms_used", []))
         new_plats = set(new.get("platforms_used", []))
         merged["platforms_used"] = sorted(old_plats | new_plats)
 
-        # Update timestamp
+        merged_platform_profiles = dict(old.get("platform_profiles", {}))
+        merged_platform_profiles.update(new.get("platform_profiles", {}))
+        merged["platform_profiles"] = merged_platform_profiles
+
+        basic_info = dict(old.get("basic_info", {}))
+        basic_info.update(new.get("basic_info", {}))
+        if merged_platform_profiles:
+            basic_info["platform_profiles"] = merged_platform_profiles
+        merged["basic_info"] = basic_info
+
+        merged["successful_platforms"] = new.get("successful_platforms", old.get("successful_platforms", 0))
+        merged["confidence"] = new.get("confidence", old.get("confidence", 0))
         merged["synthesized_at"] = datetime.now(timezone.utc).isoformat()
-        merged["sources"]["notes_collected"] += new.get("sources", {}).get("notes_collected", 0)
+        merged["sources"] = new.get("sources", old.get("sources", {}))
 
         return merged

@@ -37,6 +37,11 @@ class ContentAnalyzer:
           topics, skills, style, audience, commercial, meta
         """
         notes = raw_data.get("notes", [])
+        manual_profile = (
+            raw_data.get("user_context", {}).get("manual_profile", {})
+            if isinstance(raw_data.get("user_context", {}), dict)
+            else {}
+        )
         if not notes:
             return self._empty_result("No notes to analyze.")
 
@@ -55,7 +60,7 @@ class ContentAnalyzer:
 
         # 2. Skills & education & career extraction
         try:
-            results["skills"] = self.extract_skills(note_texts)
+            results["skills"] = self.extract_skills(note_texts, manual_profile)
         except Exception as e:
             results["skills"] = {"error": str(e), "skills_inferred": []}
 
@@ -92,15 +97,26 @@ class ContentAnalyzer:
             temperature=0.3,
         )
 
-    def extract_skills(self, note_texts: list[str]) -> dict[str, Any]:
+    def extract_skills(
+        self,
+        note_texts: list[str],
+        manual_profile: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         prompt_template = load_prompt("skills_extraction.txt", self.prompts_dir)
-        user_msg = f"{prompt_template}\n\n--- POSTS TO ANALYZE ---\n"
+        user_msg = f"{prompt_template}\n"
+        context_block = self._format_manual_profile(manual_profile or {})
+        if context_block:
+            user_msg += f"\n--- USER-DECLARED PROFILE (GROUND TRUTH) ---\n{context_block}\n"
+        user_msg += "\n--- POSTS TO ANALYZE ---\n"
         user_msg += "\n\n---\n\n".join(
             f"[Post {i + 1}]\n{t}" for i, t in enumerate(note_texts)
         )
         return self.llm.chat(
             user_msg,
-            system="You extract skills and professional signals from social media content. Output valid JSON only.",
+            system=(
+                "You extract skills and high-risk professional or educational signals from social media content. "
+                "Treat the user-declared profile as authoritative ground truth when present. Output valid JSON only."
+            ),
             temperature=0.3,
         )
 
@@ -166,11 +182,28 @@ class ContentAnalyzer:
             "note_count": 0,
             "error": reason,
             "topics": {"topics": [], "dominant_themes": []},
-            "skills": {"skills_inferred": [], "education": {}, "career_domains": {}, "content_roles": []},
+            "skills": {
+                "skills_inferred": [],
+                "education": {},
+                "career_domains": {},
+                "content_roles": [],
+                "possible_signals": {},
+            },
             "style": {"writing_style": [], "tone": [], "visual_style": []},
             "audience": {"description": "", "segments": []},
             "commercial": {"has_commercial_signal": False, "categories": [], "evidence": []},
         }
+
+    @staticmethod
+    def _format_manual_profile(manual_profile: dict[str, Any]) -> str:
+        cleaned = {
+            key: str(value).strip()
+            for key, value in (manual_profile or {}).items()
+            if str(value or "").strip()
+        }
+        if not cleaned:
+            return ""
+        return json.dumps(cleaned, ensure_ascii=False, indent=2)
 
     def save_signals(self, signals: dict[str, Any], path: Path | None = None) -> Path:
         out_path = path or Path("outputs/analyzed_signals.json")

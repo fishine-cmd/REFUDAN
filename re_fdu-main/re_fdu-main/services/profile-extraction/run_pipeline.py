@@ -53,11 +53,27 @@ from typing import Any
 from schoolmate.config import get_api_key, ensure_dirs
 from schoolmate.database import ProfileDatabase
 from schoolmate.collectors.dispatcher import CollectorDispatcher
-from schoolmate.collectors.base import detect_platform
 from schoolmate.agents.content_analyzer import ContentAnalyzer
 from schoolmate.agents.profile_synthesizer import ProfileSynthesizer
 from schoolmate.agents.embedding import EmbeddingGenerator
 from llm_client import LLMClient
+
+
+def _clean_optional_text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _build_user_context(args: argparse.Namespace) -> dict[str, Any]:
+    manual_profile = {
+        "school": _clean_optional_text(getattr(args, "school", "")),
+        "major": _clean_optional_text(getattr(args, "major", "")),
+        "gpa": _clean_optional_text(getattr(args, "gpa", "")),
+        "goal": _clean_optional_text(getattr(args, "goal", "")),
+    }
+    return {
+        "manual_profile": manual_profile,
+        "has_manual_profile": any(manual_profile.values()),
+    }
 
 
 def main() -> int:
@@ -111,6 +127,14 @@ Examples:
                         help="User ID for database storage (auto-generated if omitted)")
     parser.add_argument("--display-name", default=None,
                         help="Display name hint")
+    parser.add_argument("--school", default=None,
+                        help="User-declared school. Treated as ground truth for profile synthesis.")
+    parser.add_argument("--major", default=None,
+                        help="User-declared major. Treated as ground truth for profile synthesis.")
+    parser.add_argument("--gpa", default=None,
+                        help="User-declared GPA. Treated as ground truth for profile synthesis.")
+    parser.add_argument("--goal", default=None,
+                        help="User-declared target goal. Treated as ground truth for profile synthesis.")
 
     # ── Second Me ──
     parser.add_argument("--second-me-token", default=None,
@@ -150,34 +174,25 @@ Examples:
 
     # ── Browser login (one-shot, persists cookies for Playwright collectors) ──
     parser.add_argument("--xhs-login", action="store_true",
-                        help="One-shot: open a headed browser to xiaohongshu.com so the "
-                             "user can scan/login manually. Cookies persist to "
-                             "data/browser_profile/. Subsequent collect runs go headless.")
+                        help="One-shot: launch the real Chrome/CDP Xiaohongshu login flow. "
+                             "The script verifies homepage UI/cookie/login state first, "
+                             "then later collections reuse that trusted browser profile.")
 
     args = parser.parse_args()
     ensure_dirs()
+    user_context = _build_user_context(args)
 
     # ── XHS login one-shot mode ──
     if args.xhs_login:
         try:
-            from schoolmate.browser import login_session
-            sys.stderr.write("\n[XHS Login] Opening browser → xiaohongshu.com\n")
-            sys.stderr.write("[XHS Login] 请在打开的浏览器窗口中扫码或输入账号密码登录小红书\n")
-            sys.stderr.write("[XHS Login] 登录完成后,回到本窗口按 Enter 关闭浏览器并保存登录态\n")
-            sys.stderr.flush()
-            with login_session("https://www.xiaohongshu.com") as _page:
-                input()
-            sys.stderr.write("[XHS Login] OK — cookie 已保存到 data/browser_profile/\n")
-            if args.json_output:
-                print(json.dumps({"success": True, "message": "XHS login persisted"}, ensure_ascii=False))
-            return 0
+            from xhs_login import main as xhs_login_main
+            return xhs_login_main()
         except Exception as e:
             sys.stderr.write(f"[XHS Login] FAILED: {e}\n")
             if args.json_output:
                 print(json.dumps({"success": False, "error": str(e)}, ensure_ascii=False))
             return 1
 
-    # ── Log helper (--json-output routes progress to stderr) ──
     def log(msg: str) -> None:
         if args.json_output:
             sys.stderr.write(msg + "\n")
@@ -219,6 +234,7 @@ Examples:
                 "profile_url": stored.get("basic_info", {}).get("profile_url", ""),
             },
             "extraction_status": {"success": True, "partial": False, "warnings": []},
+            "user_context": user_context,
             "collected_at": datetime.now(timezone.utc).isoformat(),
         }
         # Skip Stage 1, jump to Stage 2
@@ -249,6 +265,7 @@ Examples:
             log(f"  [FAIL] File not found: {args.raw_input}")
             return 1
         raw_data = json.loads(raw_path.read_text(encoding="utf-8"))
+        raw_data["user_context"] = user_context
         log(f"  [OK] Loaded {len(raw_data.get('notes', []))} notes from "
               f"{raw_data.get('platforms', [])}")
     elif args.no_scrape:
@@ -271,13 +288,19 @@ Examples:
             raw_data = dispatcher.dispatch(parsed_accounts, display_name_hint=args.display_name)
         except RuntimeError as e:
             if "CDP" in str(e) or "not connected" in str(e):
-                log("\n  [FAIL] Edge CDP proxy is not running.")
-                log("  Start the web-access CDP proxy first.")
+                log("\n  [FAIL] Chrome CDP is not available.")
+                log("  Enable remote debugging in Chrome first: chrome://inspect/#remote-debugging")
+                log("  Then run `python xhs_login.py` once to confirm homepage login before collection.")
                 if args.json_output:
-                    print(json.dumps({"success": False, "error": "CDP proxy not connected", "hint": "Start Edge with remote debugging on port 3456"}, ensure_ascii=False))
+                    print(json.dumps({
+                        "success": False,
+                        "error": "Chrome CDP not connected",
+                        "hint": "Enable Chrome remote debugging, confirm 127.0.0.1:9222 is running, and run python xhs_login.py once",
+                    }, ensure_ascii=False))
                 return 1
             raise
 
+        raw_data["user_context"] = user_context
         status = raw_data.get("extraction_status", {})
         rp = raw_data.get("resolved_profile", {})
         platforms_used = raw_data.get("platforms", [])
@@ -419,6 +442,8 @@ Examples:
             "topics_count": topics_count,
             "skills_count": skills_count,
             "confidence": profile["confidence"],
+            "collection_status": raw_data.get("extraction_status", {}),
+            "collection_diagnostics": raw_data.get("diagnostics", {}),
             "profile": profile,
         }
         if sync_result:

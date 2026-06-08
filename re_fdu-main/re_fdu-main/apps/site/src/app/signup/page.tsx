@@ -2,6 +2,7 @@
 
 import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { productPrinciple } from "@/lib/product-language";
 
 type Role = "senior" | "junior";
 
@@ -46,7 +47,8 @@ function SignupForm() {
         <p className="landing-eyebrow">Create account</p>
         <h1>把你的经验系统化，或让你的问题更早抵达。</h1>
         <p className="auth-copy">
-          学长侧会把 persona 变成可注入的经验接口，学弟侧会把画像变成更精准的推荐和更高质量的提问。
+          学长侧会把 Agent 档案变成可注入的经验接口，学弟侧会把个人画像变成更精准的推荐和更高质量的提问。
+          {" "}整个系统的核心原则是“{productPrinciple}”。
         </p>
         <div className="auth-role-preview">
           <button
@@ -68,7 +70,7 @@ function SignupForm() {
 
       <section className="auth-panel auth-panel--form">
         <div className="auth-panel__head">
-          <p className="landing-eyebrow">Identity setup</p>
+          <p className="landing-eyebrow">身份设置</p>
           <h2>注册 RE:FUDAN 账号</h2>
         </div>
 

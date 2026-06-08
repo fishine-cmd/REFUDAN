@@ -19,6 +19,10 @@ export const runtime = "nodejs";
 interface BuildRequest {
   accounts: string[];
   displayName?: string;
+  school?: string;
+  major?: string;
+  gpa?: string;
+  goal?: string;
 }
 
 export async function POST(request: Request) {
@@ -29,7 +33,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { accounts, displayName } = body;
+  const { accounts, displayName, school, major, gpa, goal } = body;
 
   if (!accounts?.length) {
     return NextResponse.json(
@@ -43,6 +47,10 @@ export async function POST(request: Request) {
     args.push("--accounts", acct);
   }
   if (displayName) args.push("--display-name", displayName);
+  if (school) args.push("--school", school);
+  if (major) args.push("--major", major);
+  if (gpa) args.push("--gpa", gpa);
+  if (goal) args.push("--goal", goal);
 
   const result = await runPipeline(args, 300_000); // 5 min timeout
 

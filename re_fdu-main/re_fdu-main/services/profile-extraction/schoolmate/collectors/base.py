@@ -19,15 +19,18 @@ _URL_PLATFORM_PATTERNS: list[tuple[str, str]] = [
 ]
 
 # ── Non-URL heuristics (lower confidence, only for unambiguous formats) ──
-# XHS user IDs are purely numeric, 8-12 digits.
-_XHS_ID_PATTERN = re.compile(r"^\d{8,12}$")
+# XHS user IDs come in two shapes:
+#   - legacy 纯数字 ID (6-15 位)
+#   - 现代 24 位十六进制 ID (MongoDB ObjectId 风格, 如 5ff0e6c1000000000100abcd)
+# 24-hex 是无歧义格式; 其余平台均靠 URL 识别, 不会撞型。
+_XHS_ID_PATTERN = re.compile(r"^(?:[0-9a-f]{24}|\d{6,15})$", re.IGNORECASE)
 
 
 def detect_platform(identifier: str) -> str | None:
     """Auto-detect the platform from an account identifier string.
 
     URLs are detected by domain matching. Non-URL identifiers are only
-    auto-detected for unambiguous formats (e.g., all-digit XHS IDs).
+    auto-detected for unambiguous formats (digit or 24-hex XHS IDs).
     For plain usernames, use explicit 'platform:identifier' syntax.
 
     >>> detect_platform("https://github.com/torvalds")
@@ -40,7 +43,9 @@ def detect_platform(identifier: str) -> str | None:
     'zhihu'
     >>> detect_platform("193190562")  # pure digit XHS ID
     'xiaohongshu'
-    >>> detect_platform("someuser")  # ambiguous — returns None
+    >>> detect_platform("5ff0e6c1000000000100abcd")  # 24-hex XHS ID
+    'xiaohongshu'
+    >>> detect_platform("someuser")  # ambiguous - returns None
     """
     # URL-based detection (highest confidence)
     if "://" in identifier:

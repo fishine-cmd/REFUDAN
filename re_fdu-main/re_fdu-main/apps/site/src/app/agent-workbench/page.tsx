@@ -1,9 +1,17 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 type SectionId = "profile" | "match" | "plaza" | "more";
+
+type Contact = {
+  id: string;
+  name: string;
+  meta: string;
+  isUserAgent?: boolean;
+};
 
 type MentorSummary = {
   id: string;
@@ -17,12 +25,75 @@ type MentorSummary = {
   meta: string;
 };
 
-const navItems: { id: SectionId; title: string; description: string; label: string }[] = [
-  { id: "profile", title: "Persona Studio", description: "整理资料、抽取画像、定义 Agent 风格。", label: "P1" },
-  { id: "match", title: "Match Logic", description: "校准你的目标，让后续推荐更可信。", label: "P2" },
-  { id: "plaza", title: "Agent Plaza", description: "浏览公开学长画像，挑选进入对话的对象。", label: "P3" },
-  { id: "more", title: "Expansion", description: "为后续工作流和能力扩展预留接口。", label: "P4" },
+type AgentProfileData = {
+  resumeFileName?: string | null;
+  resumeText?: string;
+  school?: string;
+  major?: string;
+  gpa?: string;
+  goal?: string;
+  promptText?: string;
+  accounts?: {
+    xhsId?: string;
+    githubUser?: string;
+    linkedinUrl?: string;
+    zhihuId?: string;
+  };
+  knowledgeItems?: { id: string; title: string; source: string; privacy: string }[];
+  createdAt?: number;
+  updatedAt?: number;
+};
+
+type Message = { id: string; sender: "agent" | "user" | "system"; content: string };
+
+type SessionTurn = {
+  id: string;
+  speaker: "junior_agent" | "senior_agent" | "orchestrator" | "system";
+  content: string;
+  visibleTo?: "junior" | "senior" | "both";
+  source?: "manual" | "autoplay";
+  slot?: string;
+};
+
+type SessionDetail = {
+  sessionId: string;
+  summary?: string;
+  autoplayState?: {
+    status?: "idle" | "running" | "completed" | "degraded";
+    round?: number;
+    maxRounds?: number;
+    coveredSlots?: string[];
+    currentSlot?: string;
+    done?: boolean;
+    lastError?: string;
+  };
+  assessment?: {
+    summary?: string;
+    verdict?: string;
+    adjustedScore?: number;
+    coveredSlots?: string[];
+  } | null;
+  turns?: SessionTurn[];
+};
+
+type ChatProgress = {
+  busy: boolean;
+  label: string;
+};
+
+const navItems: { id: SectionId; title: string; description: string }[] = [
+  { id: "profile", title: "个人档案", description: "实时查看与编辑 AI 自动提取的档案信息。" },
+  { id: "match", title: "需求匹配", description: "调整核心诉求后自动匹配路径相似的 Agent。" },
+  { id: "plaza", title: "Agent 广场", description: "发现并搜索公开 Agent，拓展对话对象。" },
+  { id: "more", title: "更多功能", description: "预留功能扩展位，支持后续新增。" },
 ];
+
+const selfContact: Contact = {
+  id: "self",
+  name: "我的 Agent",
+  meta: "你的专属 Agent 工作台",
+  isUserAgent: true,
+};
 
 const generationSteps = [
   "正在解析你的简历和公开资料...",
@@ -44,24 +115,71 @@ const nextStepByGoal: Record<string, string> = {
   apply: "申请 / 路径选择",
 };
 
+function buildTurnMessage(turn: SessionTurn): Message | null {
+  if (turn.visibleTo === "senior") return null;
+
+  if (turn.speaker === "orchestrator" || turn.speaker === "system") {
+    return {
+      id: turn.id,
+      sender: "system",
+      content: turn.content,
+    };
+  }
+
+  if (turn.speaker === "junior_agent") {
+    return {
+      id: turn.id,
+      sender: "user",
+      content: turn.source === "autoplay" ? `[AI 自动追问] ${turn.content}` : turn.content,
+    };
+  }
+
+  return {
+    id: turn.id,
+    sender: "agent",
+    content: turn.source === "autoplay" && turn.slot ? `[${turn.slot}] ${turn.content}` : turn.content,
+  };
+}
+
+function buildConversationFromSession(detail: SessionDetail): Message[] {
+  const messages = (detail.turns ?? [])
+    .map(buildTurnMessage)
+    .filter((message): message is Message => Boolean(message));
+
+  if (detail.assessment?.summary) {
+    const covered = detail.assessment.coveredSlots?.length
+      ? ` 已确认 ${detail.assessment.coveredSlots.join(" / ")}。`
+      : "";
+    const score =
+      typeof detail.assessment.adjustedScore === "number"
+        ? ` 回流评分 ${detail.assessment.adjustedScore}。`
+        : "";
+    messages.push({
+      id: `${detail.sessionId}-assessment`,
+      sender: "system",
+      content: `[A2A 结论] ${detail.assessment.summary}${covered}${score}`.trim(),
+    });
+  }
+
+  return messages;
+}
+
 function AgentWorkbenchInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
   const [me, setMe] = useState<{ role: "senior" | "junior" } | null>(null);
-  useEffect(() => {
-    fetch("/api/auth/me")
-      .then((r) => r.json())
-      .then((d) => {
-        const u = d?.user ?? d;
-        if (u?.role) setMe({ role: u.role });
-      })
-      .catch(() => {});
-  }, []);
-
   const [mentors, setMentors] = useState<MentorSummary[]>([]);
   const [activeSection, setActiveSection] = useState<SectionId>("profile");
   const [activeMentorId, setActiveMentorId] = useState("");
+
+  const [contacts, setContacts] = useState<Contact[]>([selfContact]);
+  const [activeId, setActiveId] = useState(selfContact.id);
+
+  const [conversationState, setConversationState] = useState<Record<string, Message[]>>({});
+  const [chatSessionIds, setChatSessionIds] = useState<Record<string, string>>({});
+  const [chatInput, setChatInput] = useState("");
+  const [chatProgress, setChatProgress] = useState<Record<string, ChatProgress>>({});
 
   const [resumeFileName, setResumeFileName] = useState<string | null>(null);
   const [resumeText, setResumeText] = useState("");
@@ -80,6 +198,24 @@ function AgentWorkbenchInner() {
   const [linkedinUrl, setLinkedinUrl] = useState("");
   const [zhihuId, setZhihuId] = useState("");
   const [builtProfile, setBuiltProfile] = useState<Record<string, unknown> | null>(null);
+  const [agentProfile, setAgentProfile] = useState<AgentProfileData | null>(null);
+  const [hasAgent, setHasAgent] = useState(false);
+
+  const [knowledgeItems, setKnowledgeItems] = useState([
+    { id: "k1", title: "夏令营面试笔记.pdf", source: "本地上传", privacy: "公开" },
+    { id: "k2", title: "实习复盘总结.md", source: "本地上传", privacy: "握手后可见" },
+    { id: "k3", title: "AI 对话记录 - 科研讨论", source: "历史导入", privacy: "仅本人确认后可见" },
+  ]);
+
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => r.json())
+      .then((d) => {
+        const user = d?.user ?? d;
+        if (user?.role) setMe({ role: user.role });
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -94,6 +230,24 @@ function AgentWorkbenchInner() {
         const data = await res.json();
         if (cancelled) return;
         if (data?.builtProfile) setBuiltProfile(data.builtProfile);
+        if (data?.agentProfile) {
+          const ap = data.agentProfile as AgentProfileData;
+          setAgentProfile(ap);
+          // 回填表单,便于"管理 / 编辑"
+          if (ap.resumeFileName) setResumeFileName(ap.resumeFileName);
+          if (ap.resumeText) setResumeText(ap.resumeText);
+          if (ap.school) setSchool(ap.school);
+          if (ap.major) setMajor(ap.major);
+          if (ap.gpa) setGpa(ap.gpa);
+          if (ap.goal) setGoal(ap.goal);
+          if (ap.promptText) setPromptText(ap.promptText);
+          if (ap.accounts?.xhsId) setXhsId(ap.accounts.xhsId);
+          if (ap.accounts?.githubUser) setGithubUser(ap.accounts.githubUser);
+          if (ap.accounts?.linkedinUrl) setLinkedinUrl(ap.accounts.linkedinUrl);
+          if (ap.accounts?.zhihuId) setZhihuId(ap.accounts.zhihuId);
+          if (ap.knowledgeItems?.length) setKnowledgeItems(ap.knowledgeItems);
+        }
+        if (data?.hasAgent) setHasAgent(true);
       } catch {}
     })();
     return () => {
@@ -101,11 +255,12 @@ function AgentWorkbenchInner() {
     };
   }, []);
 
-  const [knowledgeItems, setKnowledgeItems] = useState([
-    { id: "k1", title: "夏令营面试笔记.pdf", source: "本地上传", privacy: "公开" },
-    { id: "k2", title: "实习复盘总结.md", source: "本地上传", privacy: "握手后可见" },
-    { id: "k3", title: "AI 对话记录 - 科研讨论", source: "历史导入", privacy: "仅本人确认后可见" },
-  ]);
+  useEffect(() => {
+    const section = searchParams.get("section");
+    if (section === "profile" || section === "match" || section === "plaza" || section === "more") {
+      setActiveSection(section);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     fetch("/api/seniors")
@@ -114,10 +269,18 @@ function AgentWorkbenchInner() {
         const list: MentorSummary[] = data.mentors ?? [];
         setMentors(list);
 
+        const mentorContacts: Contact[] = list.map((mentor) => ({
+          id: mentor.id,
+          name: mentor.name,
+          meta: mentor.title || "已开放协作",
+        }));
+        setContacts([selfContact, ...mentorContacts]);
+
         const paramMentor = searchParams.get("mentor");
-        if (paramMentor && list.find((m) => m.id === paramMentor)) {
+        if (paramMentor && list.find((mentor) => mentor.id === paramMentor)) {
+          setActiveId(paramMentor);
           setActiveMentorId(paramMentor);
-          setActiveSection("plaza");
+          setActiveSection("match");
         } else if (list.length > 0) {
           setActiveMentorId(list[0].id);
         }
@@ -128,17 +291,230 @@ function AgentWorkbenchInner() {
   useEffect(() => {
     if (!isGenerating) return;
     setGenerationStep(0);
+    // 仅推进文案动画;isGenerating 的结束由 handleGenerate 真实流程控制。
     const interval = window.setInterval(() => {
       setGenerationStep((prev) => Math.min(prev + 1, generationSteps.length - 1));
     }, 1000);
-    const timeout = window.setTimeout(() => {
-      setIsGenerating(false);
-    }, 3000);
     return () => {
       window.clearInterval(interval);
-      window.clearTimeout(timeout);
     };
   }, [isGenerating]);
+
+  const activeContact = useMemo(
+    () => contacts.find((contact) => contact.id === activeId) ?? contacts[0] ?? selfContact,
+    [activeId, contacts],
+  );
+  const activeMentor = useMemo(
+    () => mentors.find((mentor) => mentor.id === activeMentorId) ?? mentors[0] ?? null,
+    [activeMentorId, mentors],
+  );
+  const messages = conversationState[activeContact.id] ?? [];
+  const activeChatProgress = chatProgress[activeContact.id] ?? { busy: false, label: "" };
+  const isChatLoading = activeChatProgress.busy;
+  const builtProfilePreview = useMemo(() => {
+    if (!builtProfile) return [];
+    return Object.entries(builtProfile).slice(0, 6);
+  }, [builtProfile]);
+  const profileCompletion = [resumeFileName || resumeText.trim(), school, major, gpa, goal].filter(Boolean).length;
+  const profileReadiness = Math.round((profileCompletion / 5) * 100);
+  const platformCount = [githubUser, xhsId, linkedinUrl, zhihuId].filter((value) => value.trim()).length;
+
+  const updateChatProgress = useCallback((contactId: string, patch: Partial<ChatProgress>) => {
+    setChatProgress((prev) => ({
+      ...prev,
+      [contactId]: {
+        busy: prev[contactId]?.busy ?? false,
+        label: prev[contactId]?.label ?? "",
+        ...patch,
+      },
+    }));
+  }, []);
+
+  const syncConversationFromSession = useCallback(async (contactId: string, sessionId: string) => {
+    const response = await fetch(`/api/a2a/sessions/${sessionId}`);
+    const detail = (await response.json()) as SessionDetail & { error?: string };
+    if (!response.ok || !detail?.sessionId) {
+      throw new Error(detail?.error ?? "Failed to load A2A session");
+    }
+
+    setConversationState((prev) => ({
+      ...prev,
+      [contactId]: buildConversationFromSession(detail),
+    }));
+    setChatSessionIds((prev) => ({
+      ...prev,
+      [contactId]: detail.sessionId,
+    }));
+
+    return detail;
+  }, []);
+
+  const runAutoplayLoop = useCallback(
+    async (contactId: string, sessionId: string, initialState?: SessionDetail["autoplayState"]) => {
+      let done = !!initialState?.done;
+      let round = initialState?.round ?? 1;
+      let covered = initialState?.coveredSlots ?? [];
+      let currentSlot = initialState?.currentSlot;
+
+      while (!done) {
+        updateChatProgress(contactId, {
+          busy: true,
+          label: `A2A running: round ${round}, covered ${covered.length}/5 slots${
+            currentSlot ? `, current topic: ${currentSlot}` : ""
+          }`,
+        });
+
+        const autoplayResponse = await fetch(`/api/a2a/sessions/${sessionId}/autoplay`, {
+          method: "POST",
+        });
+        const advanced = (await autoplayResponse.json()) as {
+          error?: string;
+          done?: boolean;
+          round?: number;
+          coveredSlots?: string[];
+          autoplayState?: SessionDetail["autoplayState"];
+        };
+
+        if (!autoplayResponse.ok) {
+          throw new Error(advanced?.error ?? "Autoplay failed");
+        }
+
+        done = !!advanced.done;
+        round = advanced.round ?? round;
+        covered = advanced.coveredSlots ?? advanced.autoplayState?.coveredSlots ?? covered;
+        currentSlot = advanced.autoplayState?.currentSlot;
+
+        await syncConversationFromSession(contactId, sessionId);
+      }
+
+      const finalDetail = await syncConversationFromSession(contactId, sessionId);
+      updateChatProgress(contactId, {
+        busy: false,
+        label:
+          finalDetail.autoplayState?.status === "degraded"
+            ? `A2A ended in degraded mode${finalDetail.autoplayState.lastError ? `: ${finalDetail.autoplayState.lastError}` : ""}`
+            : `A2A completed in ${finalDetail.autoplayState?.round ?? round} rounds with ${
+                finalDetail.autoplayState?.coveredSlots?.length ?? covered.length
+              }/5 slots covered`,
+      });
+    },
+    [syncConversationFromSession, updateChatProgress],
+  );
+
+  const handleSendMessage = useCallback(async () => {
+    const trimmed = chatInput.trim();
+    if (!trimmed || isChatLoading || activeContact.isUserAgent) return;
+
+    const contactId = activeContact.id;
+    const existingSessionId = chatSessionIds[contactId];
+
+    const userMessage: Message = {
+      id: `${contactId}-${Date.now()}`,
+      sender: "user",
+      content: trimmed,
+    };
+
+    setConversationState((prev) => ({
+      ...prev,
+      [contactId]: [...(prev[contactId] ?? []), userMessage],
+    }));
+    setChatInput("");
+    updateChatProgress(contactId, {
+      busy: true,
+      label: existingSessionId ? "Continuing current A2A session..." : "Sending first message and starting A2A...",
+    });
+
+    try {
+      if (existingSessionId) {
+        const followUpResponse = await fetch(`/api/a2a/sessions/${existingSessionId}/turns`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ question: trimmed }),
+        });
+        const followUp = await followUpResponse.json();
+        if (!followUpResponse.ok) {
+          throw new Error(followUp?.error ?? "Failed to continue A2A session");
+        }
+
+        await syncConversationFromSession(contactId, existingSessionId);
+        updateChatProgress(contactId, {
+          busy: false,
+          label: "Session updated. Open the full trace for details.",
+        });
+        return;
+      }
+
+      const createResponse = await fetch("/api/a2a/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          seniorId: contactId,
+          question: trimmed,
+          origin: "legacy",
+          autoplay: true,
+          intent: {
+            direction: nextStepByGoal[goal] ?? "legacy-chat",
+            question: trimmed,
+          },
+        }),
+      });
+      const created = await createResponse.json();
+      if (!createResponse.ok || !created?.sessionId) {
+        throw new Error(created?.error ?? "Failed to start A2A session");
+      }
+
+      setChatSessionIds((prev) => ({ ...prev, [contactId]: created.sessionId }));
+
+      const agentMessage: Message = {
+        id: `${contactId}-${Date.now()}-reply`,
+        sender: "agent",
+        content: created.reply ?? created.error ?? "（对方暂时无法回复，请稍后重试）",
+      };
+
+      setConversationState((prev) => ({
+        ...prev,
+        [contactId]: [...(prev[contactId] ?? []), agentMessage],
+      }));
+
+      await syncConversationFromSession(contactId, created.sessionId);
+
+      if (created.autoplayState?.enabled && !created.autoplayState?.done) {
+        await runAutoplayLoop(contactId, created.sessionId, created.autoplayState);
+        return;
+      }
+
+      updateChatProgress(contactId, {
+        busy: false,
+        label: "A2A completed. Open the full trace for details.",
+      });
+    } catch (error) {
+      setConversationState((prev) => ({
+        ...prev,
+        [contactId]: [
+          ...(prev[contactId] ?? []),
+          {
+            id: `${contactId}-${Date.now()}-reply`,
+            sender: "agent",
+            content: "（网络异常，请稍后重试）",
+          },
+        ],
+      }));
+      updateChatProgress(contactId, {
+        busy: false,
+        label: error instanceof Error ? error.message : "A2A failed to start. Please retry.",
+      });
+    }
+  }, [
+    activeContact.id,
+    activeContact.isUserAgent,
+    chatInput,
+    chatSessionIds,
+    goal,
+    isChatLoading,
+    runAutoplayLoop,
+    syncConversationFromSession,
+    updateChatProgress,
+  ]);
 
   const handleResumeFile = (file: File | null) => {
     if (!file) return;
@@ -149,17 +525,6 @@ function AgentWorkbenchInner() {
     event.preventDefault();
     const file = event.dataTransfer.files[0];
     if (file) handleResumeFile(file);
-  };
-
-  const validateProfile = () => {
-    const nextErrors: string[] = [];
-    if (!resumeFileName && resumeText.trim().length === 0) nextErrors.push("请上传简历文件或粘贴简历内容。");
-    if (!school.trim()) nextErrors.push("请填写学校。");
-    if (!major.trim()) nextErrors.push("请填写专业。");
-    if (!gpa.trim()) nextErrors.push("请填写 GPA。");
-    if (!goal.trim()) nextErrors.push("请选择核心目标。");
-    setErrors(nextErrors);
-    return nextErrors.length === 0;
   };
 
   const collectPlatformAccounts = (): string[] => {
@@ -174,507 +539,535 @@ function AgentWorkbenchInner() {
   const handleGenerate = async () => {
     const accounts = collectPlatformAccounts();
 
-    if (accounts.length === 0) {
-      if (!validateProfile()) return;
-      setIsGenerating(true);
-      window.setTimeout(() => {
-        setIsGenerating(false);
-        if (me?.role === "junior") {
-          const direction = encodeURIComponent(nextStepByGoal[goal] ?? "研究方向与问题梳理");
-          setSuccessMessage("你的 Agent 已更新，正在带你进入下一步推荐。");
-          window.setTimeout(() => {
-            router.push(`/me/junior?from=agent-built&direction=${direction}`);
-          }, 900);
-        } else {
-          setSuccessMessage("你的 Agent 已更新，画像已写入当前工作台。");
-        }
-      }, 3000);
+    // 统一校验:核心标准化信息必填;简历与外部账号至少有其一作为画像来源。
+    const nextErrors: string[] = [];
+    if (!school.trim()) nextErrors.push("请填写学校。");
+    if (!major.trim()) nextErrors.push("请填写专业。");
+    if (!gpa.trim()) nextErrors.push("请填写 GPA。");
+    if (!goal.trim()) nextErrors.push("请选择核心目标。");
+    if (!resumeFileName && resumeText.trim().length === 0 && accounts.length === 0) {
+      nextErrors.push("请上传简历、粘贴简历内容，或至少连接一个外部账号。");
+    }
+    if (nextErrors.length > 0) {
+      setErrors(nextErrors);
       return;
     }
 
     setErrors([]);
     setSuccessMessage(null);
     setIsGenerating(true);
-    setBuiltProfile(null);
+
+    const buildWarnings: string[] = [];
 
     try {
-      const res = await fetch("/api/profile/build", {
+      // 1) 有外部账号 → 跑社交画像合成管线,得到 builtProfile。
+      if (accounts.length > 0) {
+        setBuiltProfile(null);
+        try {
+          const res = await fetch("/api/profile/build", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              accounts,
+              displayName: [school, major, goal].filter(Boolean).join(" ").trim() || undefined,
+              school: school.trim() || undefined,
+              major: major.trim() || undefined,
+              gpa: gpa.trim() || undefined,
+              goal: goal.trim() || undefined,
+            }),
+          });
+          const data = await res.json();
+          if (res.ok && data.profile) {
+            setBuiltProfile(data.profile);
+          } else {
+            buildWarnings.push(data.error ?? `社交画像生成失败 (HTTP ${res.status})`);
+          }
+        } catch (err) {
+          buildWarnings.push(`社交画像生成网络异常: ${String(err)}`);
+        }
+      }
+
+      // 2) 始终持久化手填档案 → 这样档案栏才会显示当前 Agent。
+      const agentPayload = {
+        resumeFileName,
+        resumeText,
+        school,
+        major,
+        gpa,
+        goal,
+        promptText,
+        accounts: {
+          xhsId: xhsId.trim(),
+          githubUser: githubUser.trim(),
+          linkedinUrl: linkedinUrl.trim(),
+          zhihuId: zhihuId.trim(),
+        },
+        knowledgeItems,
+      };
+
+      const saveRes = await fetch("/api/profile/agent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          accounts,
-          displayName: [school, major, goal].filter(Boolean).join(" ").trim() || undefined,
-        }),
+        credentials: "same-origin",
+        body: JSON.stringify(agentPayload),
       });
-      const data = await res.json();
-      if (res.ok && data.profile) {
-        setBuiltProfile(data.profile);
-        if (me?.role === "junior") {
-          const direction = encodeURIComponent(nextStepByGoal[goal] ?? "研究方向与问题梳理");
-          setSuccessMessage("画像生成成功，正在进入“选择问题方向”这一步。");
+      const saved = await saveRes.json();
+
+      if (saveRes.ok && saved.agentProfile) {
+        const wasUpdate = hasAgent;
+        setAgentProfile(saved.agentProfile as AgentProfileData);
+        setHasAgent(true);
+        if (buildWarnings.length > 0) {
+          setErrors(buildWarnings);
+        }
+        if (me?.role === "junior" && !wasUpdate) {
+          const direction = encodeURIComponent(nextStepByGoal[goal] ?? "科研方向与问题梳理");
+          setSuccessMessage("你的 Agent 已生成并保存，系统正在带你进入下一步问题方向与学长推荐。");
           window.setTimeout(() => {
             router.push(`/me/junior?from=agent-built&direction=${direction}`);
-          }, 1100);
+          }, 1200);
         } else {
-          setSuccessMessage("画像生成成功，你的 Agent 已可用于后续对话与收件箱场景。");
+          setSuccessMessage(
+            wasUpdate ? "Agent 信息已更新并保存到工作台。" : "你的 Agent 已生成并保存到工作台。",
+          );
         }
       } else {
-        setErrors([data.error ?? `Profile build failed (HTTP ${res.status})`]);
+        setErrors([saved.error ?? `保存 Agent 失败 (HTTP ${saveRes.status})`, ...buildWarnings]);
       }
     } catch (err) {
       setErrors([`Network error: ${String(err)}`]);
     } finally {
-      window.setTimeout(() => setIsGenerating(false), 800);
+      setIsGenerating(false);
     }
   };
 
-  const activeMentor = mentors.find((mentor) => mentor.id === activeMentorId) ?? mentors[0] ?? null;
-  const platformCount = [githubUser, xhsId, linkedinUrl, zhihuId].filter((value) => value.trim()).length;
-  const profileCompletion = [resumeFileName || resumeText.trim(), school, major, gpa, goal].filter(Boolean).length;
-  const profileReadiness = Math.round((profileCompletion / 5) * 100);
-  const builtProfilePreview = useMemo(() => {
-    if (!builtProfile) return [];
-    return Object.entries(builtProfile).slice(0, 6);
-  }, [builtProfile]);
-
-  const renderRightPanel = () => {
-    if (activeSection === "plaza") {
-      return (
-        <>
-          <section className="wb-panel-card wb-panel-card--accent">
-            <p className="wb-kicker">Selected agent</p>
-            {activeMentor ? (
-              <>
-                <h3>{activeMentor.name}</h3>
-                <p className="wb-muted">{activeMentor.title}</p>
-                <p>{activeMentor.highlight}</p>
-                <div className="wb-token-row">
-                  {activeMentor.tags.slice(0, 4).map((tag) => (
-                    <span key={tag} className="wb-token">
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <p className="wb-muted">还没有可展示的学长画像。</p>
-            )}
-          </section>
-
-          <section className="wb-panel-card">
-            <p className="wb-kicker">Plaza mode</p>
-            <h3>进入对话前先看清画像和轨迹</h3>
-            <ul className="wb-bullet-list">
-              <li>先暴露标签、方向和亮点，再引导用户进入聊天。</li>
-              <li>卡片交互保持轻量，避免在这里塞过多操作按钮。</li>
-              <li>保持工作台与公开广场同一视觉语言，降低切换成本。</li>
-            </ul>
-          </section>
-        </>
-      );
-    }
-
-    if (activeSection !== "profile") {
-      return (
-        <>
-          <section className="wb-panel-card wb-panel-card--accent">
-            <p className="wb-kicker">Module status</p>
-            <h3>Conversation has moved out</h3>
-            <p>实际对话流程已经迁移到独立页面，这里更适合作为准备与分发中心。</p>
-          </section>
-          <section className="wb-panel-card">
-            <p className="wb-kicker">Next step</p>
-            <h3>{me?.role === "junior" ? "前往学弟主页查看推荐" : "前往学长主页查看收件箱"}</h3>
-            <a className="wb-side-link" href={me?.role === "junior" ? "/me/junior" : me?.role === "senior" ? "/me/senior" : "/me"}>
-              打开对应主页
-            </a>
-          </section>
-        </>
-      );
-    }
-
-    return (
-      <>
-        <section className="wb-panel-card wb-panel-card--accent">
-          <p className="wb-kicker">Live persona status</p>
-          <h3>{builtProfile ? "画像已生成，可用于匹配和对话注入" : "正在准备你的数字分身"}</h3>
-          <div className="wb-stat-stack">
-            <div className="wb-stat">
-              <span>Profile readiness</span>
-              <strong>{profileReadiness}%</strong>
-            </div>
-            <div className="wb-stat">
-              <span>Connected platforms</span>
-              <strong>{platformCount}</strong>
-            </div>
-            <div className="wb-stat">
-              <span>Knowledge items</span>
-              <strong>{knowledgeItems.length}</strong>
-            </div>
-          </div>
-        </section>
-
-        <section className="wb-panel-card">
-          <p className="wb-kicker">Prompt direction</p>
-          <h3>Agent 应该如何替你表达</h3>
-          <p className="wb-muted">
-            {promptText.trim() || "还没有写入额外 prompt。建议明确你想让 Agent 优先追问的问题和语气。"}
-          </p>
-          <div className="wb-mini-grid">
-            <div>
-              <span>School</span>
-              <strong>{school || "待补充"}</strong>
-            </div>
-            <div>
-              <span>Major</span>
-              <strong>{major || "待补充"}</strong>
-            </div>
-            <div>
-              <span>Goal</span>
-              <strong>{goalLabels[goal] ?? "待补充"}</strong>
-            </div>
-            <div>
-              <span>Role</span>
-              <strong>{me?.role === "senior" ? "Senior" : me?.role === "junior" ? "Junior" : "Unknown"}</strong>
-            </div>
-          </div>
-        </section>
-
-        <section className="wb-panel-card">
-          <div className="wb-panel-head">
-            <div>
-              <p className="wb-kicker">Profile snapshot</p>
-              <h3>Structured output preview</h3>
-            </div>
-            {builtProfile ? (
-              <button
-                type="button"
-                className="wb-inline-button"
-                onClick={async () => {
-                  try {
-                    await fetch("/api/profile/me", {
-                      method: "DELETE",
-                      credentials: "same-origin",
-                    });
-                  } catch {}
-                  setBuiltProfile(null);
-                }}
-              >
-                清除画像
-              </button>
-            ) : null}
-          </div>
-          {builtProfile ? (
-            <>
-              <div className="wb-preview-list">
-                {builtProfilePreview.map(([key, value]) => (
-                  <div key={key} className="wb-preview-item">
-                    <span>{key}</span>
-                    <strong>{typeof value === "object" ? "Structured data" : String(value)}</strong>
-                  </div>
-                ))}
-              </div>
-              <pre className="wb-json-preview">{JSON.stringify(builtProfile, null, 2)}</pre>
-            </>
-          ) : (
-            <p className="wb-muted">右侧会在生成画像后展示结构化结果和调试预览。</p>
-          )}
-        </section>
-      </>
-    );
+  const openMentorFromPlaza = (mentor: MentorSummary) => {
+    setActiveMentorId(mentor.id);
+    setActiveId(mentor.id);
+    setActiveSection("match");
   };
 
   return (
-    <main className="workbench-shell">
-      <section className="workbench-hero">
-        <div className="workbench-hero__copy">
-          <div className="workbench-badge-row">
-            <span className="workbench-badge">SecondMe-inspired shell</span>
-            <span className="workbench-badge workbench-badge--muted">P3 core demo language</span>
-          </div>
-          <p className="workbench-hero__eyebrow">A2A workbench</p>
-          <h1>让画像、协议和后续对话入口在同一个专业工作台里发生。</h1>
-          <p className="workbench-hero__summary">
-            这个页面现在不是单纯的表单，而是核心演示台。左侧负责流程，中间负责创作与编辑，右侧负责状态、解释和结构化结果。
-          </p>
-        </div>
+    <main className={activeSection === "profile" ? "workbench workbench--legacy workbench--profile" : "workbench workbench--legacy"}>
+      <aside className="workbench-nav">
+        {navItems.map((item) => (
+          <button
+            key={item.id}
+            className={item.id === activeSection ? "workbench-nav__card is-active" : "workbench-nav__card"}
+            type="button"
+            onClick={() => setActiveSection(item.id)}
+          >
+            <h3>{item.title}</h3>
+            <p>{item.description}</p>
+          </button>
+        ))}
+      </aside>
 
-        <div className="workbench-hero__meta">
-          <div className="workbench-meta-card">
-            <span>Current role</span>
-            <strong>{me?.role === "senior" ? "Senior agent owner" : me?.role === "junior" ? "Junior agent builder" : "Loading role"}</strong>
-          </div>
-          <div className="workbench-meta-card">
-            <span>Core objective</span>
-            <strong>{goalLabels[goal] ?? "Build a trustworthy persona"}</strong>
-          </div>
-          <div className="workbench-meta-card">
-            <span>Compliance</span>
-            <strong>AI 代为表达，非真人直发</strong>
-          </div>
-        </div>
-      </section>
-
-      <div className="workbench-compliance">
-        合规提示：本工作台中由 AI 助手生成的回复均为“AI 代为表达”，非学长学姐本人直接发言；所有学长资料来源于本人主动填写或本人授权抓取的公开社媒画像。
-      </div>
-
-      <div className="workbench-stage">
-        <aside className="workbench-stage__nav">
-          {me?.role === "senior" ? (
-            <div className="workbench-role-banner">
-              <strong>学长视角</strong>
-              <p>你的 persona 会在学弟提问时注入回答，决定回复的质感和可信度。</p>
+      {activeSection === "plaza" ? (
+        <section className="workbench-plaza" aria-label="Agent plaza">
+          <header className="workbench-plaza__header">
+            <div>
+              <h2>Agent 广场</h2>
+              <p>精选学长学姐 · 基于路径相似度推荐</p>
             </div>
-          ) : me?.role === "junior" ? (
-            <div className="workbench-role-banner">
-              <strong>学弟视角</strong>
-              <p>你的画像将用于推荐更匹配的学长，并帮助 Agent 更早问到关键问题。</p>
+            <span className="workbench-chat__tag">PLAZA</span>
+          </header>
+          <div className="workbench-plaza__grid">
+            {mentors.map((mentor) => (
+              <article
+                key={mentor.id}
+                className={mentor.id === activeMentorId ? "plaza-card is-active" : "plaza-card"}
+                onClick={() => openMentorFromPlaza(mentor)}
+              >
+                <div className="plaza-card__media">
+                  {mentor.avatar ? <img src={mentor.avatar} alt={mentor.name} /> : <div className="plaza-card__media-placeholder" />}
+                  <div className="plaza-card__badges">
+                    {mentor.badges.map((badge) => (
+                      <span key={badge}>{badge}</span>
+                    ))}
+                  </div>
+                </div>
+                <div className="plaza-card__body">
+                  <h3>{mentor.name}</h3>
+                  <p className="plaza-card__title">{mentor.title}</p>
+                  <div className="plaza-card__tags">
+                    {mentor.tags.map((tag) => (
+                      <span key={tag}>{tag}</span>
+                    ))}
+                  </div>
+                  <p className="plaza-card__highlight">{mentor.highlight}</p>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : activeSection === "profile" ? (
+        <section className="workbench-chat workbench-profile">
+          <header className="workbench-chat__profile">
+            <div>
+              <h2>个人档案与 Agent 创建</h2>
+              <p>实时查看 AI 提取结果，并在这里继续编辑</p>
+            </div>
+            <span className="workbench-chat__tag">PROFILE</span>
+          </header>
+
+          <div className="workbench-profile__content">
+            {hasAgent ? (
+              <section className="profile-section profile-agent-card">
+                <div className="profile-section__head">
+                  <div>
+                    <h3>当前 Agent</h3>
+                    <p className="wb-muted">每位用户拥有一个主 Agent，可在下方编辑后点击「更新」。</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="wb-inline-button"
+                    onClick={async () => {
+                      if (!window.confirm("确定删除当前 Agent 吗？将清除已保存的档案与社交画像。")) return;
+                      try {
+                        await Promise.all([
+                          fetch("/api/profile/agent", { method: "DELETE", credentials: "same-origin" }),
+                          fetch("/api/profile/me", { method: "DELETE", credentials: "same-origin" }),
+                        ]);
+                      } catch {}
+                      setBuiltProfile(null);
+                      setAgentProfile(null);
+                      setHasAgent(false);
+                      setSuccessMessage(null);
+                    }}
+                  >
+                    删除 Agent
+                  </button>
+                </div>
+
+                <div className="profile-summary-grid">
+                  <div className="profile-summary-card">
+                    <span>名称</span>
+                    <strong>{[school, major].filter(Boolean).join(" · ") || "我的 Agent"}</strong>
+                  </div>
+                  <div className="profile-summary-card">
+                    <span>核心目标</span>
+                    <strong>{goalLabels[goal] ?? goal ?? "—"}</strong>
+                  </div>
+                  <div className="profile-summary-card">
+                    <span>GPA</span>
+                    <strong>{gpa || "—"}</strong>
+                  </div>
+                  <div className="profile-summary-card">
+                    <span>外部来源</span>
+                    <strong>{platformCount > 0 ? `${platformCount} 个已连接` : "未连接"}</strong>
+                  </div>
+                  <div className="profile-summary-card">
+                    <span>社交画像</span>
+                    <strong>{builtProfile ? "已生成" : "未生成"}</strong>
+                  </div>
+                  {agentProfile?.updatedAt ? (
+                    <div className="profile-summary-card">
+                      <span>最近更新</span>
+                      <strong>{new Date(agentProfile.updatedAt).toLocaleString("zh-CN")}</strong>
+                    </div>
+                  ) : null}
+                </div>
+              </section>
+            ) : null}
+
+            <section className="profile-section">
+              <div className="profile-section__head">
+                <div>
+                  <h3>社交画像预览</h3>
+                  <p className="wb-muted">这里会同步 AI 从外部账号提取出的主 profile。</p>
+                </div>
+                {builtProfile ? (
+                  <button
+                    type="button"
+                    className="wb-inline-button"
+                    onClick={async () => {
+                      try {
+                        await fetch("/api/profile/me", { method: "DELETE", credentials: "same-origin" });
+                      } catch {}
+                      setBuiltProfile(null);
+                    }}
+                  >
+                    清除画像
+                  </button>
+                ) : null}
+              </div>
+
+              {builtProfile ? (
+                <>
+                  <div className="profile-summary-grid">
+                    {builtProfilePreview.map(([key, value]) => (
+                      <div key={key} className="profile-summary-card">
+                        <span>{key}</span>
+                        <strong>{typeof value === "object" ? "结构化数据" : String(value)}</strong>
+                      </div>
+                    ))}
+                  </div>
+                  <pre className="wb-json-preview">{JSON.stringify(builtProfile, null, 2)}</pre>
+                </>
+              ) : (
+                <p className="workbench-chat__empty">
+                  {hasAgent
+                    ? "当前 Agent 暂无社交画像。连接外部账号后点击「更新」即可生成。"
+                    : "还没有可展示的画像结果。填写下方信息后即可生成。"}
+                </p>
+              )}
+            </section>
+
+            <section className="profile-section">
+              <h3>简历录入区</h3>
+              <div className="profile-upload" onDragOver={(e) => e.preventDefault()} onDrop={handleResumeDrop}>
+                <label className="profile-upload__button" htmlFor="resume-upload">PDF 文件上传</label>
+                <input id="resume-upload" type="file" accept=".pdf" onChange={(e) => handleResumeFile(e.target.files?.[0] ?? null)} />
+                <p>支持拖拽上传，或点击按钮选择文件</p>
+              </div>
+              {resumeFileName ? (
+                <div className="profile-file">
+                  <span>{resumeFileName}</span>
+                  <button type="button" onClick={() => setResumeFileName(null)}>删除</button>
+                </div>
+              ) : null}
+              <textarea className="profile-textarea" placeholder="或粘贴简历文本内容" value={resumeText} onChange={(e) => setResumeText(e.target.value)} />
+            </section>
+
+            <section className="profile-section">
+              <h3>标准化信息确认</h3>
+              <div className="profile-grid">
+                <label className="profile-field">学校<input value={school} onChange={(e) => setSchool(e.target.value)} placeholder="例如：复旦大学" /></label>
+                <label className="profile-field">专业<input value={major} onChange={(e) => setMajor(e.target.value)} placeholder="例如：计算机科学" /></label>
+                <label className="profile-field">GPA<input value={gpa} onChange={(e) => setGpa(e.target.value)} placeholder="例如：3.7 / 4.0" /></label>
+                <label className="profile-field">
+                  核心目标
+                  <select value={goal} onChange={(e) => setGoal(e.target.value)}>
+                    <option value="">请选择</option>
+                    <option value="summer">夏令营</option>
+                    <option value="intern">实习</option>
+                    <option value="apply">申请</option>
+                  </select>
+                </label>
+              </div>
+            </section>
+
+            <section className="profile-section">
+              <div className="profile-section__head">
+                <div>
+                  <h3>外部画像来源</h3>
+                  <p className="wb-muted">已连接 {platformCount} 个来源</p>
+                </div>
+              </div>
+              <div className="profile-grid">
+                <label className="profile-field">GitHub 用户名<input value={githubUser} onChange={(e) => setGithubUser(e.target.value)} placeholder="例如：torvalds" /></label>
+                <label className="profile-field">小红书主页链接<input value={xhsId} onChange={(e) => setXhsId(e.target.value)} placeholder="粘贴含 xsec_token 的主页分享链接（App 里点「分享·复制链接」）" /></label>
+                <label className="profile-field">LinkedIn URL<input value={linkedinUrl} onChange={(e) => setLinkedinUrl(e.target.value)} placeholder="https://linkedin.com/in/..." /></label>
+                <label className="profile-field">知乎 ID 或 URL<input value={zhihuId} onChange={(e) => setZhihuId(e.target.value)} placeholder="https://zhihu.com/people/..." /></label>
+              </div>
+            </section>
+
+            <section className="profile-section">
+              <h3>专属知识库构建</h3>
+              <div className="profile-actions">
+                <button type="button">本地资料上传</button>
+                <button type="button">外部数据源接入</button>
+                <button type="button">历史内容导入</button>
+              </div>
+              <div className="profile-knowledge">
+                {knowledgeItems.map((item) => (
+                  <div key={item.id} className="profile-knowledge__row">
+                    <div>
+                      <strong>{item.title}</strong>
+                      <span>{item.source}</span>
+                    </div>
+                    <select
+                      value={item.privacy}
+                      onChange={(e) =>
+                        setKnowledgeItems((prev) =>
+                          prev.map((entry) => (entry.id === item.id ? { ...entry, privacy: e.target.value } : entry)),
+                        )
+                      }
+                    >
+                      {privacyOptions.map((opt) => (
+                        <option key={opt} value={opt}>{opt}</option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className="profile-section">
+              <h3>Agent 对话定位输入区</h3>
+              <textarea
+                className="profile-textarea profile-textarea--large"
+                placeholder="你想让 Agent 帮你问什么？例如：帮我了解保研面试的重点..."
+                value={promptText}
+                onChange={(e) => setPromptText(e.target.value)}
+              />
+            </section>
+          </div>
+
+          {errors.length > 0 ? (
+            <div className="profile-errors">{errors.map((err) => <p key={err}>{err}</p>)}</div>
+          ) : null}
+          {successMessage ? (
+            <div className="profile-success">
+              <p>{successMessage}</p>
             </div>
           ) : null}
 
-          <nav className="workbench-nav workbench-nav--enhanced">
-            {navItems.map((item) => (
-              <button
-                key={item.id}
-                className={item.id === activeSection ? "workbench-nav__card is-active" : "workbench-nav__card"}
-                type="button"
-                onClick={() => setActiveSection(item.id)}
-              >
-                <span className="workbench-nav__label">{item.label}</span>
-                <h3>{item.title}</h3>
-                <p>{item.description}</p>
-              </button>
-            ))}
-          </nav>
-
-          <section className="workbench-rail-card">
-            <p className="wb-kicker">Readiness</p>
-            <div className="workbench-progress">
-              <div className="workbench-progress__bar">
-                <span style={{ width: `${profileReadiness}%` }} />
-              </div>
-              <strong>{profileReadiness}% complete</strong>
+          <footer className="profile-footer">
+            <button
+              className="profile-submit"
+              type="button"
+              onClick={handleGenerate}
+              disabled={isGenerating}
+            >
+              {isGenerating ? "处理中…" : hasAgent ? "更新 Agent 信息" : "生成我的 Agent"}
+            </button>
+          </footer>
+        </section>
+      ) : (
+        <>
+          <section className="workbench-list">
+            <div className="workbench-list__header">
+              <h3>Agent / 联系人</h3>
+              <p>点击切换当前协作对象</p>
             </div>
-            <ul className="wb-bullet-list">
-              <li>简历或文字材料决定基础 persona 的稳定性。</li>
-              <li>社媒账号越完整，推荐与问答越容易个性化。</li>
-              <li>Prompt 应聚焦“Agent 先替我问什么”。</li>
-            </ul>
-          </section>
-        </aside>
-
-        {activeSection === "plaza" ? (
-          <section className="workbench-plaza workbench-plaza--pro" aria-label="Agent plaza">
-            <header className="workbench-plaza__header workbench-plaza__header--pro">
-              <div>
-                <p className="wb-kicker">Public agent layer</p>
-                <h2>Agent Plaza</h2>
-                <p>先看路径和画像，再进入正式对话或详情页。</p>
-              </div>
-              <span className="workbench-chat__tag">P3 plaza</span>
-            </header>
-            <div className="workbench-plaza__grid">
-              {mentors.map((mentor) => (
-                <article
-                  key={mentor.id}
-                  className={mentor.id === activeMentorId ? "plaza-card is-active" : "plaza-card"}
+            <div className="workbench-list__items">
+              {contacts.map((contact) => (
+                <button
+                  key={contact.id}
+                  className={contact.id === activeId ? "workbench-list__item is-active" : "workbench-list__item"}
+                  type="button"
                   onClick={() => {
-                    setActiveMentorId(mentor.id);
-                    window.location.href = `/seniors/${mentor.id}`;
+                    setActiveId(contact.id);
+                    if (!contact.isUserAgent) setActiveMentorId(contact.id);
                   }}
                 >
-                  <div className="plaza-card__media">
-                    {mentor.avatar ? <img src={mentor.avatar} alt={mentor.name} /> : <div className="plaza-card__media-placeholder" />}
-                    <div className="plaza-card__badges">
-                      {mentor.badges.map((badge) => (
-                        <span key={badge}>{badge}</span>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="plaza-card__body">
-                    <h3>{mentor.name}</h3>
-                    <p className="plaza-card__title">{mentor.title}</p>
-                    <div className="plaza-card__tags">
-                      {mentor.tags.map((tag) => (
-                        <span key={tag}>{tag}</span>
-                      ))}
-                    </div>
-                    <p className="plaza-card__highlight">{mentor.highlight}</p>
-                  </div>
-                </article>
+                  <span>{contact.name}</span>
+                  <small>{contact.meta}</small>
+                </button>
               ))}
             </div>
           </section>
-        ) : activeSection === "profile" ? (
-          <section className="workbench-chat workbench-profile workbench-profile--pro">
-            <header className="workbench-chat__profile workbench-chat__profile--pro">
+
+          <section className="workbench-chat">
+            <header className="workbench-chat__profile">
               <div>
-                <p className="wb-kicker">Persona studio</p>
-                <h2>个人档案与 Agent 创建</h2>
-                <p>把简历、社媒和知识库整理成一个可注入、可解释、可持续更新的工作版本。</p>
+                <h2>{activeContact.name}</h2>
+                <p>{activeContact.isUserAgent ? "查看自己的主画像和当前匹配状态" : activeContact.meta}</p>
               </div>
-              <span className="workbench-chat__tag">Core workspace</span>
+              <span className="workbench-chat__tag">{activeSection === "match" ? "ACTIVE" : "SUMMARY"}</span>
             </header>
 
-            <div className="workbench-profile__content workbench-profile__content--pro">
-              <section className="profile-section profile-section--hero">
-                <div className="profile-section__head">
-                  <div>
-                    <p className="wb-kicker">Input channel</p>
-                    <h3>简历录入区</h3>
-                  </div>
-                  <span className="wb-chip">{resumeFileName ? "File attached" : "No file yet"}</span>
-                </div>
-                <div className="profile-upload" onDragOver={(e) => e.preventDefault()} onDrop={handleResumeDrop}>
-                  <label className="profile-upload__button" htmlFor="resume-upload">上传 PDF</label>
-                  <input id="resume-upload" type="file" accept=".pdf" onChange={(e) => handleResumeFile(e.target.files?.[0] ?? null)} />
-                  <p>支持拖拽上传，也可以只用文字草稿先跑通 persona 生成流程。</p>
-                </div>
-                {resumeFileName ? (
-                  <div className="profile-file">
-                    <span>{resumeFileName}</span>
-                    <button type="button" onClick={() => setResumeFileName(null)}>移除</button>
-                  </div>
-                ) : null}
-                <textarea
-                  className="profile-textarea"
-                  placeholder="或者粘贴简历文本内容，帮助系统快速抽取经历、方向和表达风格。"
-                  value={resumeText}
-                  onChange={(e) => setResumeText(e.target.value)}
-                />
-              </section>
-
-              <section className="profile-section">
-                <div className="profile-section__head">
-                  <div>
-                    <p className="wb-kicker">Structured fields</p>
-                    <h3>标准化信息确认</h3>
+            <div className="workbench-chat__messages">
+              {activeContact.isUserAgent ? (
+                <div className="workbench-chat__empty-panel">
+                  <p className="workbench-chat__empty">
+                    这里展示你自己的 Agent 视角。先在左侧档案区完善信息，再从联系人里切到具体学长开始协作。
+                  </p>
+                  <div className="profile-summary-grid">
+                    <div className="profile-summary-card">
+                      <span>学校</span>
+                      <strong>{school || "待补充"}</strong>
+                    </div>
+                    <div className="profile-summary-card">
+                      <span>专业</span>
+                      <strong>{major || "待补充"}</strong>
+                    </div>
+                    <div className="profile-summary-card">
+                      <span>目标</span>
+                      <strong>{goalLabels[goal] ?? "待补充"}</strong>
+                    </div>
+                    <div className="profile-summary-card">
+                      <span>画像完成度</span>
+                      <strong>{profileReadiness}%</strong>
+                    </div>
                   </div>
                 </div>
-                <div className="profile-grid">
-                  <label className="profile-field">学校<input value={school} onChange={(e) => setSchool(e.target.value)} placeholder="例如：复旦大学" /></label>
-                  <label className="profile-field">专业<input value={major} onChange={(e) => setMajor(e.target.value)} placeholder="例如：计算机科学" /></label>
-                  <label className="profile-field">GPA<input value={gpa} onChange={(e) => setGpa(e.target.value)} placeholder="例如：3.7 / 4.0" /></label>
-                  <label className="profile-field">
-                    核心目标
-                    <select value={goal} onChange={(e) => setGoal(e.target.value)}>
-                      <option value="">请选择</option>
-                      <option value="summer">夏令营</option>
-                      <option value="intern">实习</option>
-                      <option value="apply">申请</option>
-                    </select>
-                  </label>
-                </div>
-              </section>
-
-              <section className="profile-section">
-                <div className="profile-section__head">
-                  <div>
-                    <p className="wb-kicker">External signals</p>
-                    <h3>社媒账号与画像抽取</h3>
-                  </div>
-                  <span className="wb-chip">{platformCount} connected</span>
-                </div>
-                <p className="profile-section__caption">
-                  填任一字段即可触发 Profile Extraction。GitHub 直接走公开 API，其他平台按现有管线处理。
-                </p>
-                <div className="profile-grid">
-                  <label className="profile-field">GitHub 用户名<input value={githubUser} onChange={(e) => setGithubUser(e.target.value)} placeholder="例如：torvalds" /></label>
-                  <label className="profile-field">小红书 ID<input value={xhsId} onChange={(e) => setXhsId(e.target.value)} placeholder="纯数字 8-12 位" /></label>
-                  <label className="profile-field">LinkedIn URL<input value={linkedinUrl} onChange={(e) => setLinkedinUrl(e.target.value)} placeholder="https://linkedin.com/in/..." /></label>
-                  <label className="profile-field">知乎 ID 或 URL<input value={zhihuId} onChange={(e) => setZhihuId(e.target.value)} placeholder="https://zhihu.com/people/..." /></label>
-                </div>
-              </section>
-
-              <section className="profile-section">
-                <div className="profile-section__head">
-                  <div>
-                    <p className="wb-kicker">Knowledge layer</p>
-                    <h3>专属知识库构建</h3>
-                  </div>
-                </div>
-                <div className="profile-actions">
-                  <button type="button">本地资料上传</button>
-                  <button type="button">外部数据源接入</button>
-                  <button type="button">历史内容导入</button>
-                </div>
-                <div className="profile-knowledge">
-                  {knowledgeItems.map((item) => (
-                    <div key={item.id} className="profile-knowledge__row">
-                      <div>
-                        <strong>{item.title}</strong>
-                        <span>{item.source}</span>
-                      </div>
-                      <select
-                        value={item.privacy}
-                        onChange={(e) =>
-                          setKnowledgeItems((prev) =>
-                            prev.map((entry) => (entry.id === item.id ? { ...entry, privacy: e.target.value } : entry)),
-                          )
-                        }
-                      >
-                        {privacyOptions.map((opt) => (
-                          <option key={opt} value={opt}>{opt}</option>
-                        ))}
-                      </select>
+              ) : (
+                <>
+                  {messages.length === 0 && !isChatLoading ? (
+                    <p className="workbench-chat__empty">
+                      向 {activeContact.name} 发起第一条提问，获取基于真实经历的个性化建议。
+                    </p>
+                  ) : null}
+                  {messages.map((message) => (
+                    <div
+                      key={message.id}
+                      className={
+                        message.sender === "user"
+                          ? "workbench-chat__message is-user"
+                          : message.sender === "system"
+                            ? "workbench-chat__message is-system"
+                            : "workbench-chat__message"
+                      }
+                    >
+                      <p>{message.content}</p>
                     </div>
                   ))}
-                </div>
-              </section>
-
-              <section className="profile-section">
-                <div className="profile-section__head">
-                  <div>
-                    <p className="wb-kicker">Interaction brief</p>
-                    <h3>Agent 对话定位输入区</h3>
-                  </div>
-                </div>
-                <textarea
-                  className="profile-textarea profile-textarea--large"
-                  placeholder="你想让 Agent 先替你问什么？例如：帮我了解保研面试最关键的判断标准，以及我现在最该补的短板。"
-                  value={promptText}
-                  onChange={(e) => setPromptText(e.target.value)}
-                />
-              </section>
+                  {isChatLoading ? (
+                    <div className="workbench-chat__message typing-indicator" aria-label="对方正在输入">
+                      <span className="typing-dot" />
+                      <span className="typing-dot" />
+                      <span className="typing-dot" />
+                    </div>
+                  ) : null}
+                </>
+              )}
             </div>
 
-            {errors.length > 0 ? (
-              <div className="profile-errors">{errors.map((err) => <p key={err}>{err}</p>)}</div>
-            ) : null}
-
-            {successMessage ? (
-              <div className="profile-success">
-                <p>{successMessage}</p>
-              </div>
-            ) : null}
-
-            <footer className="profile-footer profile-footer--pro">
-              <div className="profile-footer__hint">
-                <span>生成后结果会写入当前用户资料，并用于推荐与问答。</span>
-              </div>
-              <button className="profile-submit" type="button" onClick={handleGenerate}>生成我的 Agent</button>
+            <footer className="workbench-chat__actions">
+              {activeSection === "match" && !activeContact.isUserAgent ? (
+                <>
+                <div className="workbench-chat__composer-wrap">
+                  <div className="workbench-chat__composer">
+                  <input
+                    type="text"
+                    placeholder={isChatLoading ? "对方正在输入..." : "输入消息..."}
+                    value={chatInput}
+                    disabled={isChatLoading}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleSendMessage();
+                    }}
+                  />
+                  <button type="button" disabled={isChatLoading} onClick={handleSendMessage}>
+                    {isChatLoading ? "等待中" : "发送"}
+                  </button>
+                  </div>
+                  {activeChatProgress.label ? <p className="workbench-chat__status">{activeChatProgress.label}</p> : null}
+                </div>
+                {chatSessionIds[activeContact.id] ? (
+                  <Link className="workbench-chat__summary" href={`/a2a/${chatSessionIds[activeContact.id]}`}>
+                    查看完整 A2A
+                  </Link>
+                ) : null}
+                </>
+              ) : (
+                <button
+                  className="workbench-chat__summary"
+                  type="button"
+                  onClick={() => {
+                    if (activeContact.isUserAgent) {
+                      setActiveSection("profile");
+                    }
+                  }}
+                >
+                  {activeContact.isUserAgent ? "回到档案编辑" : "一键总结"}
+                </button>
+              )}
+              <button
+                className="workbench-chat__fab"
+                type="button"
+                aria-label="新建对话"
+                onClick={() => setActiveSection("plaza")}
+              >
+                +
+              </button>
             </footer>
           </section>
-        ) : (
-          <section className="workbench-chat workbench-chat--placeholder">
-            <div className="workbench-placeholder">
-              <p className="wb-kicker">Module handoff</p>
-              <h2>对话流程已迁移到独立页面</h2>
-              <p className="wb-muted">
-                这个区域保留为工作台模块入口，真正的聊天、收件箱和推荐浏览已经拆到各自页面，避免把所有能力揉成一个拥挤界面。
-              </p>
-              <a className="wb-side-link" href={me?.role === "junior" ? "/me/junior" : me?.role === "senior" ? "/me/senior" : "/me"}>
-                打开我的主页
-              </a>
-            </div>
-          </section>
-        )}
-
-        <aside className="workbench-stage__inspector">
-          {renderRightPanel()}
-        </aside>
-      </div>
+        </>
+      )}
 
       {isGenerating ? (
         <div className="generation-overlay" aria-live="polite">

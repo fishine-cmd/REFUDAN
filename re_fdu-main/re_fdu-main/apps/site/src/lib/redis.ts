@@ -31,10 +31,16 @@ export const K = {
   sessionByUser: (id: string) => `refudan:session:byuser:${id}`,
   chat: (chatId: string) => `refudan:chat:${chatId}`,
   chatMsgs: (chatId: string) => `refudan:chat:msgs:${chatId}`,
+  a2aTrace: (sessionId: string) => `refudan:a2a:trace:${sessionId}`,
+  a2aHandoff: (sessionId: string) => `refudan:a2a:handoff:${sessionId}`,
+  a2aAssessment: (sessionId: string) => `refudan:a2a:assessment:${sessionId}`,
+  a2aAssessmentByIntent: (juniorId: string, intentHash: string) =>
+    `refudan:a2a:assessment-by-intent:${juniorId}:${encodeURIComponent(intentHash)}`,
   inboxSenior: (id: string) => `refudan:inbox:senior:${id}`,
   inboxJunior: (id: string) => `refudan:inbox:junior:${id}`,
   inboxSeniorUnread: (id: string) => `refudan:inbox:senior:${id}:unread`,
   matchCache: (juniorId: string) => `refudan:match:cache:${juniorId}`,
+  agentGraphVersion: () => "refudan:agent:graph:version",
 } as const;
 
 // 7 天 (秒)

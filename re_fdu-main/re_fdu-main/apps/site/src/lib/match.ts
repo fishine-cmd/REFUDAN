@@ -1,4 +1,5 @@
 import synonyms from "../data/major-synonyms.json";
+import { buildAgentSnapshot, tokenizeProfileText } from "./agent-snapshot";
 import type { UserRow } from "./users-redis";
 
 export interface MatchResult {
@@ -90,6 +91,21 @@ function extractJuniorTags(builtProfileJson: string | null): Set<string> {
   }
 }
 
+function buildSnapshot(user: UserRow) {
+  return buildAgentSnapshot({
+    displayName: user.display_name,
+    bio: user.bio,
+    title: user.title,
+    highlight: user.highlight,
+    avatar: user.avatar,
+    tagsJson: user.tags_json,
+    personaJson: user.persona_json,
+    detailedProfileJson: user.detailed_profile_json,
+    builtProfileJson: user.built_profile_json,
+    agentProfileJson: user.agent_profile_json,
+  });
+}
+
 function extractGoals(detailedProfileJson: string | null): Set<string> {
   if (!detailedProfileJson) return new Set();
   try {
@@ -171,21 +187,43 @@ function findIntentMatches(tokens: Set<string>, texts: Array<string | null | und
 }
 
 export function scoreOne(junior: UserRow, senior: UserRow, intent?: MatchIntent): MatchResult {
-  const jSchool = getSchool(junior.detailed_profile_json);
-  const sSchool = getSchool(senior.detailed_profile_json);
-  const jMajor = getMajor(junior.detailed_profile_json);
-  const sMajor = getMajor(senior.detailed_profile_json);
-  const jGoals = extractGoals(junior.detailed_profile_json);
-  const jTags = extractJuniorTags(junior.built_profile_json);
-  const sTags = tokensFromTags(senior.tags_json);
-  const sExpertise = extractSeniorExpertise(senior.persona_json);
+  const juniorSnapshot = buildSnapshot(junior);
+  const seniorSnapshot = buildSnapshot(senior);
+  const jSchool = juniorSnapshot.school || getSchool(junior.detailed_profile_json);
+  const sSchool = seniorSnapshot.school || getSchool(senior.detailed_profile_json);
+  const jMajor = juniorSnapshot.major || getMajor(junior.detailed_profile_json);
+  const sMajor = seniorSnapshot.major || getMajor(senior.detailed_profile_json);
+  const jGoals = tokenizeProfileText([
+    juniorSnapshot.goal,
+    ...Array.from(extractGoals(junior.detailed_profile_json)),
+  ]);
+  const jTags = tokenizeProfileText([
+    ...Array.from(extractJuniorTags(junior.built_profile_json)),
+    ...juniorSnapshot.skills,
+    ...juniorSnapshot.interests,
+    ...juniorSnapshot.topics,
+    ...juniorSnapshot.knowledgeTitles,
+  ]);
+  const sTags = tokenizeProfileText([
+    ...tokensFromTags(senior.tags_json),
+    ...seniorSnapshot.tags,
+  ]);
+  const sExpertise = tokenizeProfileText([
+    ...Array.from(extractSeniorExpertise(senior.persona_json)),
+    seniorSnapshot.personaExpertise,
+    seniorSnapshot.goal,
+    seniorSnapshot.title,
+    seniorSnapshot.highlight,
+  ]);
   const sPool = new Set([...sTags, ...sExpertise]);
   const intentTokens = extractIntentTokens(intent);
   const intentMatches = findIntentMatches(intentTokens, [
     ...sPool,
-    senior.title,
-    senior.highlight,
-    senior.bio,
+    seniorSnapshot.title,
+    seniorSnapshot.highlight,
+    seniorSnapshot.bio,
+    seniorSnapshot.personaBackground,
+    seniorSnapshot.personaExpertise,
   ]);
 
   const reasons: string[] = [];
@@ -260,6 +298,7 @@ export function rankSeniors(
   const hasAnyJuniorData =
     !!junior.built_profile_json ||
     !!junior.detailed_profile_json ||
+    !!junior.agent_profile_json ||
     !!intent?.direction ||
     !!intent?.question;
 
