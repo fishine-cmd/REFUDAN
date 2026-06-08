@@ -1,63 +1,59 @@
-# schoolmate/browser.py
-"""Playwright-backed browser primitives, singleton-managed.
-
-Wraps `playwright.sync_api` for the synchronous collector code style used
-elsewhere in this package. The persistent context (cookies, localStorage,
-extension state) is stored at `BROWSER_USER_DATA_DIR` so the user logs in
-once via `xhs_login.bat` and subsequent headless collect runs reuse it.
-
-Public surface (kept deliberately small, mirroring the 7 primitives the
-legacy `extract_xhs_profile.py` exposed plus a login helper):
-
-    get_context(headless=True) -> BrowserContext
-    new_page(url=None, headless=True) -> Page
-    navigate(page, url, wait_until="networkidle")
-    eval_js(page, script) -> Any
-    scroll(page, dy=2000)
-    click(page, selector, timeout=5000)
-    go_back(page)
-    close(page)
-    login_session(initial_url) -> contextmanager yielding Page
-
-The module also exports legacy aliases (`create_tab`, `close_tab`) so the
-linkedin/zhihu collectors can transition with a single import-line change.
-"""
+"""Playwright-backed browser primitives with optional Chrome CDP attach."""
 
 from __future__ import annotations
 
 import atexit
+import os
 import threading
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
+from urllib.parse import urlparse
 
-from playwright.sync_api import (
-    BrowserContext,
-    Page,
-    Playwright,
-    sync_playwright,
-)
+from playwright.sync_api import BrowserContext, Page, Playwright, sync_playwright
 
 from schoolmate.config import (
+    BROWSER_CDP_ENDPOINT,
     BROWSER_HEADLESS_DEFAULT,
+    BROWSER_USE_CDP,
     BROWSER_USER_DATA_DIR,
     BROWSER_VIEWPORT_HEIGHT,
     BROWSER_VIEWPORT_WIDTH,
+    CDP_ENDPOINT_CACHE_PATH,
 )
 
 
 class LoginRequired(RuntimeError):
-    """Raised when a collector detects the persistent context is logged out.
-
-    The caller should surface a clear message instructing the user to
-    re-run the platform's login helper (e.g. xhs_login.bat).
-    """
+    """Raised when the collector determines the browser login is unusable."""
 
 
 _state_lock = threading.Lock()
 _playwright: Playwright | None = None
 _context: BrowserContext | None = None
 _context_headless: bool | None = None
+_cdp_browser: Any = None
+_is_cdp = False
+
+_STEALTH_JS = r"""
+(() => {
+  try { Object.defineProperty(navigator, 'webdriver', { get: () => undefined }); } catch (e) {}
+  try {
+    if (!window.chrome) window.chrome = {};
+    if (!window.chrome.runtime) window.chrome.runtime = {};
+  } catch (e) {}
+  try { Object.defineProperty(navigator, 'languages', { get: () => ['zh-CN', 'zh'] }); } catch (e) {}
+  try { Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] }); } catch (e) {}
+  try {
+    const orig = navigator.permissions && navigator.permissions.query;
+    if (orig) {
+      navigator.permissions.query = (p) =>
+        (p && p.name === 'notifications')
+          ? Promise.resolve({ state: Notification.permission })
+          : orig(p);
+    }
+  } catch (e) {}
+})()
+"""
 
 
 def _ensure_user_data_dir() -> Path:
@@ -66,25 +62,127 @@ def _ensure_user_data_dir() -> Path:
     return path
 
 
-def get_context(*, headless: bool | None = None) -> BrowserContext:
-    """Lazily start Playwright and launch the persistent context.
+def is_cdp_mode() -> bool:
+    return _is_cdp
 
-    Subsequent calls within the same process reuse the cached context.
-    Changing the headless mode mid-process is unsupported (raises) since
-    Playwright doesn't allow swapping it on a running context — collectors
-    and login-mode tools live in separate process invocations anyway.
-    """
-    global _playwright, _context, _context_headless
+
+def _context_score(ctx: BrowserContext) -> tuple[int, int]:
+    pages = ctx.pages
+    xhs_hits = 0
+    for page in pages:
+      try:
+          url = (page.url or "").lower()
+      except Exception:
+          url = ""
+      if "xiaohongshu.com" in url or "rednote.com" in url:
+          xhs_hits += 1
+    return (xhs_hits, len(pages))
+
+
+def _select_cdp_context(browser: Any) -> BrowserContext:
+    contexts = list(browser.contexts)
+    if not contexts:
+        return browser.new_context()
+    contexts.sort(key=_context_score, reverse=True)
+    return contexts[0]
+
+
+def _append_candidate(candidates: list[str], candidate: str | None) -> None:
+    value = (candidate or "").strip()
+    if value and value not in candidates:
+        candidates.append(value)
+
+
+def _read_cached_cdp_endpoint() -> str:
+    cache_path = Path(CDP_ENDPOINT_CACHE_PATH)
+    if cache_path.exists():
+        try:
+            return cache_path.read_text(encoding="utf-8").strip()
+        except Exception:
+            return ""
+    return ""
+
+
+def _runtime_cdp_endpoint() -> str:
+    return (
+        os.environ.get("SCHOOLMATE_CDP_ENDPOINT", "").strip()
+        or os.environ.get("CDP_PROXY_URL", "").strip()
+        or BROWSER_CDP_ENDPOINT
+    )
+
+
+def _candidate_cdp_endpoints(endpoint: str | None = None) -> list[str]:
+    candidates: list[str] = []
+    _append_candidate(candidates, os.environ.get("SCHOOLMATE_CDP_ENDPOINT"))
+    _append_candidate(candidates, _read_cached_cdp_endpoint())
+    _append_candidate(candidates, endpoint)
+    _append_candidate(candidates, _runtime_cdp_endpoint())
+    _append_candidate(candidates, BROWSER_CDP_ENDPOINT)
+
+    snapshot = list(candidates)
+    for candidate in snapshot:
+        parsed = urlparse(candidate)
+        if parsed.scheme in ("http", "https") and parsed.netloc:
+            ws_scheme = "wss" if parsed.scheme == "https" else "ws"
+            _append_candidate(candidates, f"{ws_scheme}://{parsed.netloc}")
+    return candidates
+
+
+def _connect_cdp_browser(playwright: Playwright, endpoint: str | None = None) -> tuple[Any, str]:
+    attempts: list[str] = []
+    for candidate in _candidate_cdp_endpoints(endpoint):
+        try:
+            return playwright.chromium.connect_over_cdp(candidate), candidate
+        except Exception as exc:  # noqa: BLE001
+            attempts.append(f"{candidate}: {exc}")
+            continue
+    tried = "\n".join(f"  - {attempt}" for attempt in attempts) or "  - <none>"
+    raise RuntimeError(f"All CDP attach attempts failed:\n{tried}")
+
+
+def get_context(*, headless: bool | None = None) -> BrowserContext:
+    global _playwright, _context, _context_headless, _cdp_browser, _is_cdp
 
     headless_resolved = BROWSER_HEADLESS_DEFAULT if headless is None else headless
 
     with _state_lock:
         if _context is not None:
-            if _context_headless != headless_resolved:
+            if not _is_cdp and _context_headless != headless_resolved:
                 raise RuntimeError(
                     f"Browser context already running in headless={_context_headless}; "
                     f"cannot switch to headless={headless_resolved} in the same process."
                 )
+            return _context
+
+        if BROWSER_USE_CDP:
+            _playwright = sync_playwright().start()
+            cdp_endpoint = _runtime_cdp_endpoint()
+            try:
+                _cdp_browser, attached_endpoint = _connect_cdp_browser(_playwright, cdp_endpoint)
+            except Exception as exc:  # noqa: BLE001
+                try:
+                    _playwright.stop()
+                except Exception:
+                    pass
+                _playwright = None
+                raise RuntimeError(
+                    "Unable to attach to Chrome over CDP "
+                    f"(configured: {cdp_endpoint}): {exc}\n"
+                    "Make sure Chrome is running, remote debugging is enabled at "
+                    "`chrome://inspect/#remote-debugging`, and the page shows "
+                    "`Server running at: 127.0.0.1:9222`. If your local CDP service is "
+                    "WebSocket-only, set SCHOOLMATE_CDP_ENDPOINT to a `ws://...` endpoint."
+                ) from exc
+
+            _context = _select_cdp_context(_cdp_browser)
+            _is_cdp = True
+            _context_headless = False
+            try:
+                _context.add_init_script(_STEALTH_JS)
+            except Exception:
+                pass
+            os.environ["SCHOOLMATE_CDP_ENDPOINT"] = attached_endpoint
+            atexit.register(_shutdown)
             return _context
 
         _playwright = sync_playwright().start()
@@ -94,37 +192,51 @@ def get_context(*, headless: bool | None = None) -> BrowserContext:
             headless=headless_resolved,
             viewport={"width": BROWSER_VIEWPORT_WIDTH, "height": BROWSER_VIEWPORT_HEIGHT},
             args=[
-                "--disable-blink-features=AutomationControlled",  # softens basic bot detection
+                "--disable-blink-features=AutomationControlled",
+                "--disable-features=IsolateOrigins,site-per-process",
+                "--no-default-browser-check",
+                "--no-first-run",
             ],
+            ignore_default_args=["--enable-automation"],
         )
+        try:
+            _context.add_init_script(_STEALTH_JS)
+        except Exception:
+            pass
         _context_headless = headless_resolved
         atexit.register(_shutdown)
         return _context
 
 
 def _shutdown() -> None:
-    """Best-effort cleanup at interpreter exit."""
-    global _playwright, _context
-    try:
-        if _context is not None:
-            _context.close()
-    except Exception:
-        pass
+    global _playwright, _context, _cdp_browser, _is_cdp
+
+    if _is_cdp:
+        try:
+            if _cdp_browser is not None:
+                _cdp_browser.close()
+        except Exception:
+            pass
+    else:
+        try:
+            if _context is not None:
+                _context.close()
+        except Exception:
+            pass
+
     try:
         if _playwright is not None:
             _playwright.stop()
     except Exception:
         pass
+
     _context = None
     _playwright = None
+    _cdp_browser = None
+    _is_cdp = False
 
-
-# ────────────────────────────────────────────────────────────────────────
-# Primitives
-# ────────────────────────────────────────────────────────────────────────
 
 def new_page(url: str | None = None, *, headless: bool | None = None) -> Page:
-    """Open a new tab in the persistent context, optionally navigating to URL."""
     ctx = get_context(headless=headless)
     page = ctx.new_page()
     if url is not None:
@@ -132,16 +244,17 @@ def new_page(url: str | None = None, *, headless: bool | None = None) -> Page:
     return page
 
 
-def navigate(page: Page, url: str, *, wait_until: str = "networkidle", timeout: int = 30_000) -> None:
+def navigate(
+    page: Page,
+    url: str,
+    *,
+    wait_until: str = "domcontentloaded",
+    timeout: int = 30_000,
+) -> None:
     page.goto(url, wait_until=wait_until, timeout=timeout)
 
 
 def eval_js(page: Page, script: str) -> Any:
-    """Evaluate a JavaScript expression in the page context.
-
-    Playwright auto-handles `() => {...}` arrow IIFEs; passing the raw
-    expression is the most legacy-compatible form.
-    """
     return page.evaluate(script)
 
 
@@ -154,7 +267,7 @@ def click(page: Page, selector: str, *, timeout: int = 5_000) -> None:
 
 
 def go_back(page: Page) -> None:
-    page.go_back(wait_until="networkidle")
+    page.go_back(wait_until="domcontentloaded")
 
 
 def close(page: Page) -> None:
@@ -165,13 +278,6 @@ def close(page: Page) -> None:
 
 
 def page_snapshot(page: Page) -> dict[str, Any]:
-    """Legacy compatibility stub for the old CDP page_snapshot primitive.
-
-    The original returned a full DOM snapshot for offline analysis. With
-    Playwright, prefer eval_js + targeted selectors. This stub returns the
-    visible text + URL so WIP collectors (linkedin/zhihu) import cleanly
-    and can be rewritten in Phase 3/4.
-    """
     try:
         return {
             "url": page.url,
@@ -182,34 +288,14 @@ def page_snapshot(page: Page) -> dict[str, Any]:
         return {"url": "", "text": "", "title": ""}
 
 
-# ────────────────────────────────────────────────────────────────────────
-# Login helper
-# ────────────────────────────────────────────────────────────────────────
-
 @contextmanager
 def login_session(initial_url: str) -> Iterator[Page]:
-    """Open a headed page on `initial_url` for the user to manually log in.
-
-    Yields the Page to the caller, which is expected to block on stdin
-    (e.g. `input("...")`) until the user finishes the login flow. On exit
-    the page is closed; cookies and localStorage persist in the user data
-    directory automatically.
-    """
     page = new_page(initial_url, headless=False)
     try:
         yield page
     finally:
         close(page)
 
-
-# ────────────────────────────────────────────────────────────────────────
-# Legacy aliases (drop-in for `from extract_xhs_profile import ...`)
-# ────────────────────────────────────────────────────────────────────────
-
-# These let linkedin_collector.py / zhihu_collector.py transition with a
-# single import-line change. The semantics differ slightly from the
-# original CDP-proxy primitives (page-object oriented vs string targets),
-# but their collect() flows are WIP and will be rewritten in Phase 3/4.
 
 create_tab = new_page
 close_tab = close

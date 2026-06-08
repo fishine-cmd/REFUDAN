@@ -1,165 +1,99 @@
-# schoolmate/collectors/xhs_collector.py
-"""XHS (xiaohongshu.com) public profile + notes collector via Playwright.
-
-Reads the user profile page, scrolls to load note cards, then clicks into
-each note to extract body text, tags, and engagement counts. Uses the
-shared persistent Playwright context from `schoolmate.browser` so cookies
-from a prior `xhs_login.bat` run carry over.
-
-Output schema conforms to `BaseCollector` — same shape as the GitHub /
-LinkedIn / Zhihu collectors so the downstream `ProfileSynthesizer` is
-platform-agnostic.
-"""
+"""Xiaohongshu collector with Chrome CDP + network-response fallbacks."""
 
 from __future__ import annotations
 
+import json
 import random
 import re
 import time
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
-from schoolmate.browser import (
-    LoginRequired,
-    close,
-    eval_js,
-    navigate,
-    new_page,
-    scroll,
-)
+from schoolmate.browser import LoginRequired, close, eval_js, is_cdp_mode, navigate, new_page, scroll
 from schoolmate.collectors.base import BaseCollector, normalize_note
+from schoolmate.xhs_auth import HOME_URL, ensure_home_login_ready, format_login_markers, read_login_markers
 
 PROFILE_URL_TEMPLATE = "https://www.xiaohongshu.com/user/profile/{xhs_id}"
+_BARE_ID = re.compile(r"^(?:[0-9a-f]{24}|\d{6,15})$", re.IGNORECASE)
+_PROFILE_PATH_RE = re.compile(r"user/profile/([0-9a-fA-F]{24}|\d{6,15})")
+_URL_RE = re.compile(r"https?://[^\s]+", re.IGNORECASE)
 
-# Heuristic JS to detect login modal / wall.
-JS_DETECT_LOGIN_WALL = """
+JS_EXTRACT_STATE = r"""
 (() => {
-  const sels = [
-    '.login-container',
-    '[class*="login-modal"]',
-    '[class*="LoginModal"]',
-    '.css-1bnxg6t',  // observed login-wall class
-  ];
-  return sels.some(s => document.querySelector(s));
-})()
-"""
-
-# Single eval_js that returns the whole profile header — robust to a few
-# class-name variants XHS has shipped over the years.
-JS_EXTRACT_PROFILE = r"""
-(() => {
-  const clean = s => (s || '').replace(/\s+/g, ' ').trim();
-  const qs = (...sels) => {
-    for (const s of sels) { const el = document.querySelector(s); if (el) return el; }
-    return null;
-  };
-  const text = (...sels) => clean(qs(...sels)?.textContent || '');
-  const attr = (a, ...sels) => qs(...sels)?.getAttribute(a) || '';
-
-  const nick = text('.user-nickname', '.nickname', '[class*="userNickname"]') ||
-               clean((document.querySelector('meta[property="og:title"]')?.content || '').split('-')[0]);
-  const bio = text('.user-desc', '.desc', '[class*="userDesc"]', '[class*="description"]');
-  const avatar = attr('src', '.user-avatar img', '.avatar img', '[class*="avatar"] img') ||
-                 (document.querySelector('meta[property="og:image"]')?.content || '');
-
-  // Stats — XHS uses "关注 / 粉丝 / 获赞与收藏"; numbers can be "1.2万" etc.
-  const parseNum = s => {
-    if (!s) return null;
-    s = s.replace(/[,\s]/g, '');
-    const m = s.match(/^(\d+(?:\.\d+)?)(万|亿)?$/);
-    if (!m) return null;
-    const base = parseFloat(m[1]);
-    if (m[2] === '万') return Math.round(base * 10000);
-    if (m[2] === '亿') return Math.round(base * 1e8);
-    return Math.round(base);
-  };
-  let following = null, followers = null, liked = null;
-  const statNodes = document.querySelectorAll('.user-statistics > *, .stats > *, [class*="userStat"] > *');
-  statNodes.forEach(n => {
-    const t = clean(n.textContent);
-    if (/关注/.test(t)) following = parseNum(t.match(/[\d.,万亿]+/)?.[0]);
-    if (/粉丝/.test(t)) followers = parseNum(t.match(/[\d.,万亿]+/)?.[0]);
-    if (/获赞|赞与收藏/.test(t)) liked = parseNum(t.match(/[\d.,万亿]+/)?.[0]);
+  const unref = (x) => (x && typeof x === 'object' && x.__v_isRef)
+    ? (x._value !== undefined ? x._value : x._rawValue) : x;
+  const S = window.__INITIAL_STATE__;
+  if (!S || !S.user) return null;
+  const U = S.user;
+  const upd = unref(U.userPageData) || {};
+  const uinfo = unref(U.userInfo) || {};
+  const basic = upd.basicInfo || {};
+  const cleanDesc = (d) => (d && d !== '还没有简介') ? d : '';
+  const nickname = basic.nickname || uinfo.nickname || '';
+  const desc = cleanDesc(basic.desc) || cleanDesc(uinfo.desc) || '';
+  const avatar = basic.imageb || basic.images || uinfo.imageb || uinfo.images || '';
+  const redId = basic.redId || uinfo.redId || '';
+  let fans = null, follows = null, interaction = null;
+  (Array.isArray(upd.interactions) ? upd.interactions : []).forEach((it) => {
+    if (!it) return;
+    if (it.type === 'fans') fans = it.count;
+    else if (it.type === 'follows') follows = it.count;
+    else if (it.type === 'interaction') interaction = it.count;
   });
-
-  return { nickname: nick, bio, avatar_url: avatar, following, followers, liked };
-})()
-"""
-
-# Extract note cards from feed area. Each card returns href + cover + title + likes if visible.
-JS_EXTRACT_NOTE_CARDS = r"""
-(() => {
-  const clean = s => (s || '').replace(/\s+/g, ' ').trim();
-  const cards = [];
-  // Multiple class variants
-  const items = document.querySelectorAll(
-    'section.note-item, .feeds-container .note-item, [class*="noteItem"], a[href*="/explore/"]'
-  );
+  const rawNotes = unref(U.notes) || [];
   const seen = new Set();
-  items.forEach(el => {
-    const a = el.tagName === 'A' ? el : el.querySelector('a[href*="/explore/"], a[href*="/discovery/"]');
-    if (!a) return;
-    const href = a.href || a.getAttribute('href') || '';
-    if (!href || seen.has(href)) return;
-    seen.add(href);
-    const idMatch = href.match(/(?:explore|discovery)\/([a-z0-9]+)/i);
-    const note_id = idMatch ? idMatch[1] : href;
-    const titleEl = el.querySelector('.title, .footer .title, [class*="title"]');
-    const coverEl = el.querySelector('img');
-    const likeEl = el.querySelector('.like-wrapper .count, [class*="like"] .count, [class*="LikeCount"]');
-    cards.push({
-      note_id,
-      url: href.startsWith('http') ? href : ('https://www.xiaohongshu.com' + href),
-      title: clean(titleEl?.textContent || ''),
-      cover_url: coverEl?.src || '',
-      like_count_text: clean(likeEl?.textContent || ''),
+  const list = [];
+  (Array.isArray(rawNotes) ? rawNotes : []).forEach((tab) => {
+    (Array.isArray(tab) ? tab : []).forEach((item) => {
+      const nc = (item && (item.noteCard || item.note)) || item || {};
+      const id = nc.noteId || (item && item.id) || '';
+      if (!id || seen.has(id)) return;
+      seen.add(id);
+      const ii = nc.interactInfo || {};
+      list.push({
+        note_id: id,
+        xsec_token: (item && item.xsecToken) || nc.xsecToken || '',
+        title: nc.displayTitle || nc.title || '',
+        type: nc.type || '',
+        like_count: (ii.likedCount !== undefined ? ii.likedCount : null),
+        cover: (nc.cover && (nc.cover.urlDefault || nc.cover.urlPre || nc.cover.url)) || '',
+      });
     });
   });
-  return cards;
+  return {
+    nickname, desc, avatar, redId,
+    fans, follows, interaction,
+    user_fetching_status: unref(U.userFetchingStatus) || '',
+    notes: list,
+  };
 })()
 """
 
-# Extract note detail from the open modal/page after clicking a card.
-JS_EXTRACT_NOTE_DETAIL = r"""
+JS_EXTRACT_NOTE_STATE = r"""
 (() => {
-  const clean = s => (s || '').replace(/\s+/g, ' ').trim();
-  const qs = (...sels) => { for (const s of sels) { const el = document.querySelector(s); if (el) return el; } return null; };
-  const text = (...sels) => clean(qs(...sels)?.textContent || '');
-
-  const body = text(
-    '.note-content .desc',
-    '.note-content',
-    '[class*="noteContent"]',
-    '[class*="content"] > .desc',
-    '#detail-desc',
-  );
-
-  const tags = Array.from(document.querySelectorAll(
-    '.tag-list a, .tag, [class*="topic"] a, [class*="tag"] > a'
-  )).map(a => clean(a.textContent)).filter(t => t && !/^\s*$/.test(t));
-
-  const publish_time = text('.date', 'time', '[class*="publishTime"]', '[class*="date"]') ||
-                       (qs('time')?.getAttribute('datetime') || '');
-
-  const parseNum = s => {
-    if (!s) return null;
-    s = s.replace(/[,\s]/g, '');
-    const m = s.match(/^(\d+(?:\.\d+)?)(万|亿)?$/);
-    if (!m) return null;
-    const base = parseFloat(m[1]);
-    if (m[2] === '万') return Math.round(base * 10000);
-    if (m[2] === '亿') return Math.round(base * 1e8);
-    return Math.round(base);
-  };
-  const numAt = (...sels) => parseNum(text(...sels));
-
+  const unref = (x) => (x && typeof x === 'object' && x.__v_isRef)
+    ? (x._value !== undefined ? x._value : x._rawValue) : x;
+  const S = window.__INITIAL_STATE__;
+  if (!S || !S.note) return null;
+  const ndm = unref(S.note.noteDetailMap) || {};
+  const ids = Object.keys(ndm);
+  if (!ids.length) return null;
+  const firstId = unref(S.note.firstNoteId) || ids[0];
+  const entry = ndm[firstId] || ndm[ids[0]] || {};
+  const note = entry.note || {};
+  const ii = note.interactInfo || {};
+  const tags = (Array.isArray(note.tagList) ? note.tagList : [])
+    .map((t) => t && (t.name || t.title)).filter(Boolean);
   return {
-    text: body,
-    tags: Array.from(new Set(tags)),
-    publish_time,
-    like_count: numAt('.like-wrapper .count', '[class*="like"] .count'),
-    comment_count: numAt('.chat-wrapper .count', '[class*="comment"] .count'),
-    favorite_count: numAt('.collect-wrapper .count', '[class*="collect"] .count'),
+    note_id: note.noteId || firstId || '',
+    title: note.title || '',
+    text: note.desc || '',
+    tags: tags,
+    publish_time: note.time ? String(note.time) : '',
+    like_count: (ii.likedCount !== undefined ? ii.likedCount : null),
+    comment_count: (ii.commentCount !== undefined ? ii.commentCount : null),
+    favorite_count: (ii.collectedCount !== undefined ? ii.collectedCount : null),
   };
 })()
 """
@@ -169,23 +103,173 @@ def _sleep(lo: float, hi: float) -> None:
     time.sleep(random.uniform(lo, hi))
 
 
-def _parse_int(text_val: str) -> int | None:
-    if not text_val:
+def _extract_share_url(text: str) -> str:
+    match = _URL_RE.search(text)
+    if not match:
+        return text.strip()
+    return match.group(0).rstrip("'\"),.;!?]}")
+
+
+def _extract_profile_id(text: str) -> str:
+    candidate = _extract_share_url(text)
+    if _BARE_ID.match(candidate):
+        return candidate
+    match = _PROFILE_PATH_RE.search(candidate)
+    return match.group(1) if match else ""
+
+
+def _parse_count(value: Any) -> int | None:
+    if value is None or value == "":
         return None
-    m = re.match(r"^(\d+(?:\.\d+)?)\s*(万|亿)?", text_val.replace(",", "").replace(" ", ""))
-    if not m:
+    if isinstance(value, (int, float)):
+        return int(value)
+    text = str(value).replace(",", "").replace(" ", "").strip()
+    match = re.match(r"^(\d+(?:\.\d+)?)(万|亿)?$", text)
+    if not match:
         return None
-    base = float(m.group(1))
-    if m.group(2) == "万":
+    base = float(match.group(1))
+    suffix = match.group(2)
+    if suffix == "万":
         return int(base * 10_000)
-    if m.group(2) == "亿":
-        return int(base * 1e8)
+    if suffix == "亿":
+        return int(base * 100_000_000)
     return int(base)
 
 
-class XHSCollector(BaseCollector):
-    """Scrape XHS public profile + first N note bodies via Playwright."""
+def _extract_initial_state_from_html(html: str) -> dict[str, Any]:
+    match = re.search(r"window\.__INITIAL_STATE__=({.*})</script>", html, re.DOTALL)
+    if not match:
+        return {}
+    raw = match.group(1).replace(":undefined", ":null")
+    try:
+        data = json.loads(raw)
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
 
+
+def _extract_creator_from_initial_state(html: str) -> dict[str, Any]:
+    state = _extract_initial_state_from_html(html)
+    user_state = state.get("user") if isinstance(state, dict) else None
+    if not isinstance(user_state, dict):
+        return {}
+    user_page_data = user_state.get("userPageData") or {}
+    if not isinstance(user_page_data, dict):
+        return {}
+    basic = user_page_data.get("basicInfo") or {}
+    interactions = user_page_data.get("interactions") or []
+    stats: dict[str, Any] = {}
+    for item in interactions if isinstance(interactions, list) else []:
+        if not isinstance(item, dict):
+            continue
+        key = item.get("type")
+        if key:
+            stats[key] = item.get("count")
+    return {
+        "nickname": basic.get("nickname") or "",
+        "bio": "" if basic.get("desc") == "还没有简介" else (basic.get("desc") or ""),
+        "avatar_url": basic.get("imageb") or basic.get("images") or "",
+        "followers": _parse_count(stats.get("fans")),
+        "following": _parse_count(stats.get("follows")),
+        "liked": _parse_count(stats.get("interaction")),
+        "user_fetching_status": user_state.get("userFetchingStatus") or "",
+    }
+
+
+def _extract_note_from_initial_state(html: str, note_id: str) -> dict[str, Any]:
+    state = _extract_initial_state_from_html(html)
+    note_state = state.get("note") if isinstance(state, dict) else None
+    if not isinstance(note_state, dict):
+        return {}
+    detail_map = note_state.get("noteDetailMap") or {}
+    if not isinstance(detail_map, dict):
+        return {}
+    entry = detail_map.get(note_id) or next(iter(detail_map.values()), {})
+    if not isinstance(entry, dict):
+        return {}
+    note = entry.get("note") or {}
+    if not isinstance(note, dict):
+        return {}
+    interact = note.get("interactInfo") or {}
+    return {
+        "note_id": note.get("noteId") or note_id,
+        "title": note.get("title") or "",
+        "text": note.get("desc") or "",
+        "tags": [tag.get("name") or tag.get("title") for tag in (note.get("tagList") or []) if isinstance(tag, dict)],
+        "publish_time": str(note.get("time") or ""),
+        "like_count": interact.get("likedCount"),
+        "comment_count": interact.get("commentCount"),
+        "favorite_count": interact.get("collectedCount"),
+    }
+
+
+def _merge_note(primary: dict[str, Any], fallback: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(primary or {})
+    for key, value in (fallback or {}).items():
+        if merged.get(key) in (None, "", [], {}):
+            merged[key] = value
+    return merged
+
+
+def _normalize_note_from_api(item: dict[str, Any]) -> dict[str, Any]:
+    note_card = item.get("note_card") or item.get("noteCard") or item.get("note") or item
+    if not isinstance(note_card, dict):
+        return {}
+    interact = note_card.get("interact_info") or note_card.get("interactInfo") or {}
+    cover = note_card.get("cover") or {}
+    return {
+        "note_id": note_card.get("note_id") or note_card.get("noteId") or item.get("id") or "",
+        "xsec_token": item.get("xsec_token") or item.get("xsecToken") or note_card.get("xsec_token") or note_card.get("xsecToken") or "",
+        "title": note_card.get("display_title") or note_card.get("displayTitle") or note_card.get("title") or "",
+        "text": note_card.get("desc") or "",
+        "tags": [
+            tag.get("name") or tag.get("title")
+            for tag in (note_card.get("tag_list") or note_card.get("tagList") or [])
+            if isinstance(tag, dict)
+        ],
+        "publish_time": str(note_card.get("time") or ""),
+        "like_count": interact.get("liked_count") if isinstance(interact, dict) else None,
+        "comment_count": interact.get("comment_count") if isinstance(interact, dict) else None,
+        "favorite_count": interact.get("collected_count") if isinstance(interact, dict) else None,
+        "cover_url": cover.get("url_default") or cover.get("urlDefault") or cover.get("url_pre") or cover.get("urlPre") or cover.get("url") or "",
+        "type": note_card.get("type") or "",
+    }
+
+
+class _ResponseCapture:
+    def __init__(self) -> None:
+        self.note_list_response: dict[str, Any] | None = None
+        self.note_details: dict[str, dict[str, Any]] = {}
+
+    def bind(self, page: Any) -> None:
+        page.on("response", self._handle_response)
+
+    def _handle_response(self, response: Any) -> None:
+        url = response.url or ""
+        if "xiaohongshu.com" not in url and "rednote.com" not in url:
+            return
+        if not any(fragment in url for fragment in ("/api/sns/web/v1/user_posted", "/api/sns/web/v1/feed")):
+            return
+        try:
+            payload = response.json()
+        except Exception:
+            return
+        data = payload.get("data", payload) if isinstance(payload, dict) else payload
+        if "/api/sns/web/v1/user_posted" in url and isinstance(data, dict):
+            self.note_list_response = data
+            return
+        if "/api/sns/web/v1/feed" in url and isinstance(data, dict):
+            items = data.get("items") or []
+            if not isinstance(items, list):
+                return
+            for item in items:
+                normalized = _normalize_note_from_api(item if isinstance(item, dict) else {})
+                note_id = normalized.get("note_id") or ""
+                if note_id:
+                    self.note_details[note_id] = normalized
+
+
+class XHSCollector(BaseCollector):
     platform = "xiaohongshu"
 
     def collect(
@@ -197,107 +281,212 @@ class XHSCollector(BaseCollector):
         warnings: list[str] = []
         notes: list[dict[str, Any]] = []
 
+        identifier = _extract_share_url(identifier)
         xhs_id = identifier.strip()
-        if not re.match(r"^\d{6,15}$", xhs_id):
-            # Support full URL too
-            url_match = re.search(r"user/profile/(\d+)", xhs_id)
-            if url_match:
-                xhs_id = url_match.group(1)
+        if not _BARE_ID.match(xhs_id):
+            matched = re.search(r"user/profile/([0-9a-fA-F]{24}|\d{6,15})", xhs_id)
+            if matched:
+                xhs_id = matched.group(1)
             else:
                 return self.empty_result(
-                    "xiaohongshu", identifier, warnings,
-                    f"Invalid XHS identifier: '{identifier}' (expected numeric ID)"
+                    "xiaohongshu",
+                    identifier,
+                    warnings,
+                    f"Invalid XHS identifier: '{identifier}'",
                 )
 
         profile_url = PROFILE_URL_TEMPLATE.format(xhs_id=xhs_id)
-        page = new_page(profile_url)
-        try:
-            _sleep(1.5, 2.5)
+        xsec_token = ""
+        xsec_source = ""
+        if "xsec_token=" in identifier:
+            query = parse_qs(urlparse(identifier).query)
+            xsec_token = (query.get("xsec_token") or [""])[0]
+            xsec_source = (query.get("xsec_source") or [""])[0]
 
-            # Login wall / IP-risk redirect check
-            try:
-                current_url = page.url
-                logged_out = (
-                    "/website-login/" in current_url
-                    or "/login" in current_url
-                    or eval_js(page, JS_DETECT_LOGIN_WALL)
-                )
-            except Exception as e:
-                warnings.append(f"login-check eval failed: {e}")
-                logged_out = False
-            if logged_out:
-                # Distinguish IP-risk error from plain logged-out wall
-                if "error_code" in (page.url or ""):
+        nav_url = profile_url
+        if xsec_token:
+            nav_url = f"{profile_url}?xsec_token={xsec_token}&xsec_source={xsec_source or 'pc_user'}"
+
+        page = new_page(HOME_URL)
+        capture = _ResponseCapture()
+        capture.bind(page)
+        used_creator_html_fallback = False
+        used_note_html_fallback = False
+        used_response_note_list = False
+        used_response_note_detail = False
+
+        try:
+            home_markers = ensure_home_login_ready(page, eval_js)
+            if not home_markers["ready"]:
+                if home_markers["has_captcha_text"] or home_markers["redirected"]:
                     raise LoginRequired(
-                        "XHS 检测到自动化浏览器/IP 风险,被重定向到风险提示页。"
-                        "请双击 services/profile-extraction/xhs_login.bat 在带头浏览器里完成一次正常登录,"
-                        "之后 XHS 会信任本机指纹"
+                        "XHS homepage login is not usable for collection yet. "
+                        "Complete login and any captcha on the Xiaohongshu homepage in the attached real Chrome window, then retry. "
+                        f"Observed state: {format_login_markers(home_markers)}"
                     )
                 raise LoginRequired(
-                    "XHS 登录态失效或未登录,请双击 services/profile-extraction/xhs_login.bat 完成登录后重试"
+                    "XHS homepage login could not be confirmed. "
+                    "Reuse the same real Chrome/CDP profile, verify you are logged in on the Xiaohongshu homepage, then retry. "
+                    f"Observed state: {format_login_markers(home_markers)}"
                 )
 
-            # Profile header
-            try:
-                profile_data = eval_js(page, JS_EXTRACT_PROFILE) or {}
-            except Exception as e:
-                profile_data = {}
-                warnings.append(f"profile-header extract failed: {e}")
+            _sleep(0.8, 1.2)
+            navigate(page, nav_url)
+            _sleep(1.5, 2.5)
 
-            nickname = profile_data.get("nickname") or ""
-            bio = profile_data.get("bio") or ""
-            avatar_url = profile_data.get("avatar_url") or ""
+            resolved_url = page.url or nav_url
+            resolved_xhs_id = _extract_profile_id(resolved_url)
+            if resolved_xhs_id and resolved_xhs_id != xhs_id:
+                xhs_id = resolved_xhs_id
+                profile_url = PROFILE_URL_TEMPLATE.format(xhs_id=xhs_id)
+            if not xsec_token and "xsec_token=" in resolved_url:
+                query = parse_qs(urlparse(resolved_url).query)
+                xsec_token = (query.get("xsec_token") or [""])[0]
+                xsec_source = (query.get("xsec_source") or [""])[0]
 
-            # Scroll to load notes
+            login_markers = read_login_markers(page, eval_js)
+            current_url = str(login_markers.get("url") or resolved_url)
+            if login_markers["redirected"]:
+                if "error_code" in current_url:
+                    raise LoginRequired(
+                        "XHS redirected the collector to a risk-control page during profile access. "
+                        "Keep using the same trusted real Chrome/CDP profile and pass the full profile share URL with xsec_token. "
+                        f"Observed state: {format_login_markers(login_markers)}"
+                    )
+                raise LoginRequired(
+                    "XHS redirected the collector to a login/captcha page during profile access. "
+                    "Keep the homepage logged in first, then retry collection. "
+                    f"Observed state: {format_login_markers(login_markers)}"
+                )
+            if not login_markers["ready"]:
+                warnings.append(f"Homepage login markers weakened after profile navigation: {format_login_markers(login_markers)}")
+            login_state = login_markers.get("login_state")
+
             for _ in range(3):
-                scroll(page, dy=2000)
-                _sleep(1.5, 2.5)
+                scroll(page, dy=2400)
+                _sleep(1.2, 2.0)
+            _sleep(1.0, 1.5)
 
-            # Note cards
             try:
-                cards = eval_js(page, JS_EXTRACT_NOTE_CARDS) or []
-            except Exception as e:
-                cards = []
-                warnings.append(f"note-cards extract failed: {e}")
-            cards = cards[:max_notes]
+                state = eval_js(page, JS_EXTRACT_STATE) or {}
+            except Exception as exc:  # noqa: BLE001
+                state = {}
+                warnings.append(f"__INITIAL_STATE__ profile extraction failed: {exc}")
 
-            # Iterate each card → click → extract → back
-            for idx, card in enumerate(cards):
+            if not state:
+                html = page.content()
+                state = _extract_creator_from_initial_state(html)
+                if state:
+                    used_creator_html_fallback = True
+                    warnings.append("Fell back to HTML __INITIAL_STATE__ parsing for creator page.")
+
+            nickname = state.get("nickname") or ""
+            bio = state.get("desc") or state.get("bio") or ""
+            avatar_url = state.get("avatar") or state.get("avatar_url") or ""
+            followers = _parse_count(state.get("fans") if "fans" in state else state.get("followers"))
+            following = _parse_count(state.get("follows") if "follows" in state else state.get("following"))
+            liked = _parse_count(state.get("interaction") if "interaction" in state else state.get("liked"))
+            user_fetching_status = state.get("user_fetching_status") or ""
+
+            note_list = list(state.get("notes") or [])
+            if not note_list and capture.note_list_response:
+                response_notes = capture.note_list_response.get("notes") or []
+                note_list = [_normalize_note_from_api(item) for item in response_notes if isinstance(item, dict)]
+                note_list = [item for item in note_list if item.get("note_id")]
+                if note_list:
+                    used_response_note_list = True
+                    warnings.append("Recovered note list from XHS network responses.")
+
+            note_list = note_list[:max_notes]
+
+            if user_fetching_status == "rejected":
+                if not xsec_token:
+                    warnings.append(
+                        "XHS rejected homepage detail fetch. Use the full profile share URL copied from the Xiaohongshu app, including xsec_token."
+                    )
+                else:
+                    warnings.append(
+                        "XHS rejected homepage detail fetch even with xsec_token. This usually means the current browser session was flagged."
+                    )
+
+            for idx, item in enumerate(note_list):
+                nid = item.get("note_id") or ""
+                if not nid:
+                    continue
+                token = item.get("xsec_token") or ""
+                note_url = "https://www.xiaohongshu.com/explore/" + nid
+                if token:
+                    note_url += f"?xsec_token={token}&xsec_source=pc_user"
+
+                detail: dict[str, Any] = {}
                 try:
-                    href = card.get("url") or ""
-                    if not href:
-                        continue
-                    # Navigate directly to the note URL (more robust than clicking the card,
-                    # which sometimes opens a modal and sometimes a new page depending on
-                    # XHS A/B bucket).
-                    navigate(page, href)
-                    _sleep(2.0, 3.5)
+                    navigate(page, note_url)
+                    _sleep(1.5, 2.8)
+                    detail = eval_js(page, JS_EXTRACT_NOTE_STATE) or {}
+                except Exception as exc:  # noqa: BLE001
+                    warnings.append(f"note-detail #{idx} ({nid}) state extraction failed: {exc}")
 
-                    try:
-                        detail = eval_js(page, JS_EXTRACT_NOTE_DETAIL) or {}
-                    except Exception as e:
-                        detail = {}
-                        warnings.append(f"note-detail extract failed for {card.get('note_id')}: {e}")
+                response_detail = capture.note_details.get(nid) or {}
+                if response_detail:
+                    detail = _merge_note(detail, response_detail)
+                    used_response_note_detail = True
 
-                    note_text = (detail.get("text") or "")[:max_text_chars]
+                if not detail:
+                    html = page.content()
+                    detail = _extract_note_from_initial_state(html, nid)
+                    if detail:
+                        used_note_html_fallback = True
+                        warnings.append(f"note-detail #{idx} ({nid}) used HTML fallback parsing.")
 
-                    notes.append(normalize_note({
-                        "note_id": card.get("note_id") or "",
-                        "url": href,
-                        "title": card.get("title") or "",
-                        "text": note_text,
-                        "tags": detail.get("tags") or [],
-                        "publish_time": detail.get("publish_time") or "",
-                        "like_count": detail.get("like_count") or _parse_int(card.get("like_count_text", "")),
-                        "comment_count": detail.get("comment_count"),
-                        "favorite_count": detail.get("favorite_count"),
-                    }))
+                detail = _merge_note(detail, item)
+                note_text = (detail.get("text") or "")[:max_text_chars]
+                notes.append(
+                    normalize_note(
+                        {
+                            "note_id": nid,
+                            "url": note_url,
+                            "title": detail.get("title") or "",
+                            "text": note_text,
+                            "tags": detail.get("tags") or [],
+                            "publish_time": detail.get("publish_time") or "",
+                            "like_count": _parse_count(detail.get("like_count")),
+                            "comment_count": _parse_count(detail.get("comment_count")),
+                            "favorite_count": _parse_count(detail.get("favorite_count")),
+                        }
+                    )
+                )
 
-                    # Return to profile for next iteration
-                    navigate(page, profile_url)
-                    _sleep(1.5, 2.5)
-                except Exception as e:  # noqa: BLE001
-                    warnings.append(f"note iteration #{idx} failed: {e}")
+                try:
+                    navigate(page, nav_url)
+                    _sleep(1.0, 1.8)
+                except Exception:
+                    pass
+
+            success = bool(notes or nickname or avatar_url)
+            failure_reason = ""
+            if not success:
+                if user_fetching_status == "rejected":
+                    failure_reason = "profile detail API rejected by XHS risk-control"
+                elif "未连接到服务器" in (page.content() or ""):
+                    failure_reason = "xhs page shell loaded but backend data requests failed in-browser"
+                else:
+                    failure_reason = "profile page yielded no usable data"
+
+            diagnostics = {
+                "notes_attempted": len(note_list),
+                "notes_succeeded": len(notes),
+                "notes_with_body": sum(1 for n in notes if n.get("text")),
+                "login_state": "valid" if login_state == "logged_in" else str(login_state),
+                "user_fetching_status": user_fetching_status,
+                "browser_mode": "cdp" if is_cdp_mode() else "persistent",
+                "had_xsec_token": bool(xsec_token),
+                "resolved_url": resolved_url,
+                "used_creator_html_fallback": used_creator_html_fallback,
+                "used_note_html_fallback": used_note_html_fallback,
+                "used_response_note_list": used_response_note_list,
+                "used_response_note_detail": used_response_note_detail,
+                "captured_note_detail_count": len(capture.note_details),
+            }
 
             return {
                 "platform": "xiaohongshu",
@@ -307,21 +496,16 @@ class XHSCollector(BaseCollector):
                     "bio": bio,
                     "profile_url": profile_url,
                     "avatar_url": avatar_url,
-                    "followers": profile_data.get("followers"),
-                    "following": profile_data.get("following"),
-                    "liked": profile_data.get("liked"),
+                    "followers": followers,
+                    "following": following,
+                    "liked": liked,
                 },
                 "notes": notes,
-                "diagnostics": {
-                    "notes_attempted": len(cards),
-                    "notes_succeeded": len(notes),
-                    "notes_with_body": sum(1 for n in notes if n.get("text")),
-                    "login_state": "valid",
-                },
+                "diagnostics": diagnostics,
                 "extraction_status": {
-                    "success": bool(notes or nickname),
+                    "success": success,
                     "partial": bool(warnings),
-                    "failure_reason": "" if (notes or nickname) else "profile page yielded no data",
+                    "failure_reason": failure_reason,
                     "warnings": warnings,
                 },
                 "collected_at": datetime.now(timezone.utc).isoformat(),

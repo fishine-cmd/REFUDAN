@@ -3,6 +3,7 @@
 
 import { randomBytes } from "node:crypto";
 import { getRedis, K, SESSION_TTL_SEC } from "./redis";
+import { buildAgentSnapshot, parseStoredAgentProfile } from "./agent-snapshot";
 
 // ────────────────────────────────────────────────────────────────────────
 // Types — 与原 db.ts 保持一致
@@ -25,6 +26,7 @@ export interface UserRow {
   persona_json: string | null;
   detailed_profile_json: string | null;
   built_profile_json: string | null;
+  agent_profile_json: string | null;
 }
 
 export interface PublicUser {
@@ -39,7 +41,18 @@ export interface PublicUser {
   tags?: string[];
   badges?: string[];
   highlight?: string | null;
+  avatarUrl?: string | null;
   persona?: { name: string; background: string; expertise: string } | null;
+  agent?: {
+    school?: string;
+    major?: string;
+    goal?: string;
+    promptText?: string;
+    skills?: string[];
+    interests?: string[];
+    topics?: string[];
+    styleCues?: string[];
+  } | null;
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -69,32 +82,66 @@ function rowFromHash(
     persona_json: profile?.persona_json ?? null,
     detailed_profile_json: profile?.detailed_profile_json ?? null,
     built_profile_json: profile?.built_profile_json ?? null,
+    agent_profile_json: profile?.agent_profile_json ?? null,
   };
 }
 
 export function toPublicUser(row: UserRow): PublicUser {
+  const snapshot = buildAgentSnapshot({
+    displayName: row.display_name,
+    bio: row.bio,
+    title: row.title,
+    highlight: row.highlight,
+    avatar: row.avatar,
+    tagsJson: row.tags_json,
+    personaJson: row.persona_json,
+    detailedProfileJson: row.detailed_profile_json,
+    builtProfileJson: row.built_profile_json,
+    agentProfileJson: row.agent_profile_json,
+  });
   const base: PublicUser = {
     id: row.id,
     username: row.username,
-    displayName: row.display_name,
+    displayName: snapshot.displayName || row.display_name,
     role: row.role,
-    avatar: row.avatar,
-    bio: row.bio,
+    avatar: snapshot.avatarUrl || row.avatar,
+    avatarUrl: snapshot.avatarUrl || row.avatar,
+    bio: snapshot.bio || row.bio,
+    title: snapshot.title || row.title,
+    highlight: snapshot.highlight || row.highlight,
+    agent: {
+      school: snapshot.school || undefined,
+      major: snapshot.major || undefined,
+      goal: snapshot.goal || undefined,
+      promptText: snapshot.promptText || undefined,
+      skills: snapshot.skills,
+      interests: snapshot.interests,
+      topics: snapshot.topics,
+      styleCues: snapshot.styleCues,
+    },
   };
   if (row.role === "senior") {
-    base.title = row.title;
     if (row.scores_json) {
       try { base.scores = JSON.parse(row.scores_json); } catch { /* ignore */ }
     }
     if (row.tags_json) {
       try { base.tags = JSON.parse(row.tags_json); } catch { /* ignore */ }
     }
+    if ((!base.tags || base.tags.length === 0) && snapshot.tags.length > 0) {
+      base.tags = snapshot.tags;
+    }
     if (row.badges_json) {
       try { base.badges = JSON.parse(row.badges_json); } catch { /* ignore */ }
     }
-    base.highlight = row.highlight;
     if (row.persona_json) {
       try { base.persona = JSON.parse(row.persona_json); } catch { /* ignore */ }
+    }
+    if (!base.persona) {
+      base.persona = {
+        name: snapshot.displayName,
+        background: snapshot.personaBackground,
+        expertise: snapshot.personaExpertise,
+      };
     }
   }
   return base;
@@ -145,6 +192,8 @@ export async function insertUser(input: {
   highlight?: string | null;
   persona_json?: string | null;
   detailed_profile_json?: string | null;
+  built_profile_json?: string | null;
+  agent_profile_json?: string | null;
 }): Promise<void> {
   const r = getRedis();
   const userKey = K.user(input.id);
@@ -168,12 +217,22 @@ export async function insertUser(input: {
   if (input.badges_json != null) profileFields.badges_json = input.badges_json;
   if (input.persona_json != null) profileFields.persona_json = input.persona_json;
   if (input.detailed_profile_json != null) profileFields.detailed_profile_json = input.detailed_profile_json;
+  if (input.built_profile_json != null) profileFields.built_profile_json = input.built_profile_json;
+  if (input.agent_profile_json != null) profileFields.agent_profile_json = input.agent_profile_json;
 
   await Promise.all([
     r.hset(userKey, userFields),
     r.set(K.userByName(input.username.toLowerCase()), input.id),
     r.sadd(K.usersByRole(input.role), input.id),
     Object.keys(profileFields).length > 0 ? r.hset(profileKey, profileFields) : Promise.resolve(0),
+  ]);
+}
+
+async function invalidateAgentDerivedCaches(userId: string): Promise<void> {
+  const r = getRedis();
+  await Promise.all([
+    r.del(K.matchCache(userId)),
+    r.incr(K.agentGraphVersion()),
   ]);
 }
 
@@ -190,7 +249,7 @@ export async function updateUserBuiltProfile(
     });
   }
   // 学弟改 builtProfile 后,推荐结果缓存失效
-  await r.del(K.matchCache(userId));
+  await invalidateAgentDerivedCaches(userId);
 }
 
 export async function getBuiltProfile(userId: string): Promise<unknown | null> {
@@ -202,6 +261,63 @@ export async function getBuiltProfile(userId: string): Promise<unknown | null> {
   } catch {
     return null;
   }
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Agent profile — 用户在工作台录入的"主 Agent"完整档案
+// （简历 / 标准化信息 / 外部账号 / 知识库 / 对话定位）。
+// builtProfile（社交画像）仍单独存 built_profile_json,这里只存手填部分,
+// GET /api/profile/me 时两者合并返回。
+// ────────────────────────────────────────────────────────────────────────
+
+export interface AgentKnowledgeItem {
+  id: string;
+  title: string;
+  source: string;
+  privacy: string;
+}
+
+export interface AgentProfile {
+  resumeFileName?: string | null;
+  resumeText?: string;
+  school?: string;
+  major?: string;
+  gpa?: string;
+  goal?: string;
+  promptText?: string;
+  accounts?: {
+    xhsId?: string;
+    githubUser?: string;
+    linkedinUrl?: string;
+    zhihuId?: string;
+  };
+  knowledgeItems?: AgentKnowledgeItem[];
+  createdAt?: number;
+  updatedAt?: number;
+}
+
+export async function updateUserAgentProfile(
+  userId: string,
+  agentProfile: AgentProfile | null,
+): Promise<void> {
+  const r = getRedis();
+  if (agentProfile === null) {
+    await r.hdel(K.profile(userId), "agent_profile_json");
+  } else {
+    await r.hset(K.profile(userId), {
+      agent_profile_json: JSON.stringify(agentProfile),
+    });
+  }
+  // 档案变更后,推荐结果缓存失效
+  await invalidateAgentDerivedCaches(userId);
+}
+
+export async function getAgentProfile(userId: string): Promise<AgentProfile | null> {
+  const r = getRedis();
+  const v = await r.hget<string>(K.profile(userId), "agent_profile_json");
+  if (!v) return null;
+  if (typeof v === "object") return v as AgentProfile;
+  return parseStoredAgentProfile(v) as AgentProfile | null;
 }
 
 // ────────────────────────────────────────────────────────────────────────

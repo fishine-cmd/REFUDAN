@@ -44,7 +44,10 @@ function resolvePythonCommand(): string {
     : ["python3", "python"];
   for (const cmd of candidates) {
     try {
-      const r = spawnSync(cmd, ["--version"], { shell: true, stdio: "pipe", timeout: 5000 });
+      // shell:false (默认) — 配合上面显式的 .exe 候选,既能在 Windows 上解析,
+      // 又避免 args 数组 + shell:true 触发的 DEP0190 安全弃用警告。
+      // 缺失的命令会返回 status!==0（ENOENT 不抛异常）,自动尝试下一个候选。
+      const r = spawnSync(cmd, ["--version"], { shell: false, stdio: "pipe", timeout: 5000 });
       if (r.status === 0) return cmd;
     } catch {
       // try next
@@ -78,7 +81,9 @@ export function runPipeline<T = unknown>(
       ["run_pipeline.py", "--json-output", ...args],
       {
         cwd: PYTHON_DIR,
-        env: { ...process.env },
+        // 强制 Python 的 stdin/stdout 走 UTF-8。否则 Windows 默认用 GBK(cp936)
+        // 编码输出,而本进程按 UTF-8 读取 stdout,中文(昵称/笔记/display_name)会变乱码。
+        env: { ...process.env, PYTHONUTF8: "1", PYTHONIOENCODING: "utf-8" },
         timeout: timeoutMs,
         windowsHide: true,
       },

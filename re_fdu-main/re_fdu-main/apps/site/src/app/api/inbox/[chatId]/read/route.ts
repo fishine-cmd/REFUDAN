@@ -1,10 +1,11 @@
-// POST /api/inbox/[chatId]/read — 学长标已读
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { getChatMeta, markChatRead } from "@/lib/chat-redis";
 
+// Legacy-compatible alias for senior inbox read state.
+// New code should prefer the A2A naming surface.
 export async function POST(
   _req: NextRequest,
   ctx: { params: Promise<{ chatId: string }> },
@@ -18,11 +19,13 @@ export async function POST(
       { status: 401 },
     );
   }
+
   const { chatId } = await ctx.params;
   const meta = await getChatMeta(chatId);
   if (!meta || meta.seniorId !== me.row.id) {
     return NextResponse.json({ error: "chat not found" }, { status: 404 });
   }
+
   await markChatRead(me.row.id, chatId);
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, source: "legacy-compat" });
 }

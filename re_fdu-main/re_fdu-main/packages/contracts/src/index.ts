@@ -60,23 +60,114 @@ export interface MatchCandidate {
   reasons: MatchReason[];
 }
 
-export type Speaker = "junior_agent" | "senior_agent" | "system";
+export const a2aSessionStatuses = [
+  "draft",
+  "running",
+  "waiting_senior",
+  "handoff_ready",
+  "completed",
+  "blocked",
+] as const;
+export type A2ASessionStatus = (typeof a2aSessionStatuses)[number];
+
+export const a2aTurnKinds = [
+  "intent",
+  "question",
+  "response",
+  "retrieval",
+  "privacy_gate",
+  "summary",
+  "handoff",
+] as const;
+export type A2ATurnKind = (typeof a2aTurnKinds)[number];
+
+export const a2aProviders = ["local_persona", "secondme"] as const;
+export type A2AProvider = (typeof a2aProviders)[number];
+
+export const handoffStatuses = ["pending", "approved", "rejected"] as const;
+export type HandoffStatus = (typeof handoffStatuses)[number];
+
+export const a2aSlots = [
+  "camp_difficulty",
+  "question_types",
+  "mentor_style",
+  "trust_gated",
+  "gpa_threshold",
+] as const;
+export type A2ASlot = (typeof a2aSlots)[number];
+
+export const a2aAssessmentStatuses = ["idle", "running", "completed", "degraded"] as const;
+export type A2AAssessmentStatus = (typeof a2aAssessmentStatuses)[number];
+
+export const a2aVerdicts = [
+  "needs_clarification",
+  "promising",
+  "strong_match",
+  "not_now",
+] as const;
+export type A2AVerdict = (typeof a2aVerdicts)[number];
+
+export interface A2AAutoplayState {
+  enabled: boolean;
+  status: "idle" | "running" | "completed" | "degraded";
+  round: number;
+  maxRounds: number;
+  coveredSlots: A2ASlot[];
+  currentSlot?: A2ASlot;
+  done: boolean;
+  lastError?: string;
+}
+
+export interface A2AAssessment {
+  sessionId: string;
+  status: A2AAssessmentStatus;
+  verdict: A2AVerdict;
+  adjustedScore: number;
+  summary: string;
+  insights: string[];
+  coveredSlots: A2ASlot[];
+  round: number;
+  intentHash: string;
+  updatedAt: number;
+}
+
+export type Speaker = "junior_agent" | "senior_agent" | "orchestrator" | "system";
 
 export interface A2ATurn {
   id: string;
   speaker: Speaker;
+  kind: A2ATurnKind;
   content: string;
   privacyLevel: PrivacyLevel;
+  visibleTo?: "junior" | "senior" | "both";
+  citations?: string[];
+  traceRefs?: string[];
   cite?: string;
+  source?: "manual" | "autoplay";
+  slot?: A2ASlot;
+}
+
+export interface A2ATraceEvent {
+  id: string;
+  sessionId: string;
+  stage: string;
+  actor: Speaker | "provider";
+  payload: string;
+  ts: number;
 }
 
 export interface A2ASession {
   id: string;
   juniorAgentId: string;
   seniorAgentId: string;
+  status: A2ASessionStatus;
+  provider: A2AProvider;
   privacyLevel: PrivacyLevel;
   turns: A2ATurn[];
   summary: string;
+  handoffStatus: HandoffStatus;
+  createdAt?: number;
+  updatedAt?: number;
 }
 
 export type ReferralState = "pending" | "approved" | "rejected";
@@ -215,27 +306,40 @@ export const demoDialogueSession: A2ASession = {
   id: "a2a-001",
   juniorAgentId: "junior-agent",
   seniorAgentId: "senior-agent",
+  status: "handoff_ready",
+  provider: "local_persona",
   privacyLevel: "handshake",
   summary: "The agent asked about GPA thresholds, interview structure, and risk points.",
+  handoffStatus: "pending",
+  createdAt: 1747440000000,
+  updatedAt: 1747440600000,
   turns: [
     {
       id: "turn-1",
       speaker: "junior_agent",
+      kind: "question",
       content: "Could you share the GPA threshold and the earliest preparation advice?",
       privacyLevel: "public",
+      visibleTo: "both",
     },
     {
       id: "turn-2",
       speaker: "senior_agent",
+      kind: "response",
       content: "The threshold was competitive, but the stronger signal was fit and preparation consistency.",
       privacyLevel: "handshake",
+      visibleTo: "both",
+      citations: ["2024-interview-notes#line-23"],
       cite: "2024-interview-notes#line-23",
     },
     {
       id: "turn-3",
       speaker: "system",
+      kind: "retrieval",
       content: "Trace: kb_search(query='summer internship') returned 3 relevant snippets.",
       privacyLevel: "public",
+      visibleTo: "both",
+      traceRefs: ["trace-1"],
     },
   ],
 };

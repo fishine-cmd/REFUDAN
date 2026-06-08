@@ -1,9 +1,8 @@
-// GET /api/chats/[chatId] — 双方都可读,鉴权:必须是 junior 或 senior 参与方
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
-import { getChatMeta, getChatMessages } from "@/lib/chat-redis";
+import { getA2ASessionForViewer } from "@/lib/a2a-chat";
 import { findUserById, toPublicUser } from "@/lib/users-redis";
 
 export async function GET(
@@ -19,22 +18,33 @@ export async function GET(
       { status: 401 },
     );
   }
+
   const { chatId } = await ctx.params;
-  const meta = await getChatMeta(chatId);
-  if (!meta) return NextResponse.json({ error: "chat not found" }, { status: 404 });
-  if (meta.juniorId !== me.row.id && meta.seniorId !== me.row.id) {
+  const session = await getA2ASessionForViewer(chatId);
+  if (!session) return NextResponse.json({ error: "chat not found" }, { status: 404 });
+  if (session.juniorId !== me.row.id && session.seniorId !== me.row.id) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
-  const [messages, junior, senior] = await Promise.all([
-    getChatMessages(chatId),
-    findUserById(meta.juniorId),
-    findUserById(meta.seniorId),
+
+  const [junior, senior] = await Promise.all([
+    findUserById(session.juniorId),
+    findUserById(session.seniorId),
   ]);
+
+  const messages = session.turns
+    .filter((turn) => turn.speaker === "junior_agent" || turn.speaker === "senior_agent")
+    .map((turn, index) => ({
+      role: turn.speaker === "senior_agent" ? "assistant" : "user",
+      content: turn.content,
+      ts: session.createdAt + index,
+    }));
+
   return NextResponse.json({
+    source: "legacy-compat",
     chatId,
-    createdAt: meta.createdAt,
-    lastMessageAt: meta.lastMessageAt,
-    summary: meta.summary,
+    createdAt: session.createdAt,
+    lastMessageAt: session.lastMessageAt,
+    summary: session.summary,
     junior: junior ? toPublicUser(junior) : null,
     senior: senior ? toPublicUser(senior) : null,
     messages,

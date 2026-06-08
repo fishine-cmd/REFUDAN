@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from schoolmate.collectors.base import detect_platform, classify_identifiers
+from schoolmate.collectors.base import detect_platform
 from schoolmate.collectors.github_collector import GitHubCollector
 from schoolmate.collectors.linkedin_collector import LinkedInCollector
 from schoolmate.collectors.xhs_collector import XHSCollector

@@ -46,6 +46,20 @@ BROWSER_HEADLESS_DEFAULT = os.environ.get("SCHOOLMATE_BROWSER_HEADLESS", "true")
 BROWSER_VIEWPORT_WIDTH = int(os.environ.get("SCHOOLMATE_BROWSER_VIEWPORT_WIDTH", "1280"))
 BROWSER_VIEWPORT_HEIGHT = int(os.environ.get("SCHOOLMATE_BROWSER_VIEWPORT_HEIGHT", "800"))
 
+# ── CDP attach 模式:连接用户本机已开启远程调试的真实 Edge/Chrome ──
+# 真实浏览器指纹不会被小红书签名风控拒绝(userPageData rejected)。
+# 开启:set SCHOOLMATE_BROWSER_USE_CDP=true
+# 端点:Edge/Chrome 以 --remote-debugging-port=9222 启动后的调试地址。
+BROWSER_USE_CDP = os.environ.get("SCHOOLMATE_BROWSER_USE_CDP", "true").lower() in ("1", "true", "yes")
+BROWSER_CDP_ENDPOINT = os.environ.get(
+    "SCHOOLMATE_CDP_ENDPOINT",
+    os.environ.get("CDP_PROXY_URL", "http://127.0.0.1:9222"),
+)
+CDP_ENDPOINT_CACHE_PATH = os.environ.get(
+    "SCHOOLMATE_CDP_ENDPOINT_CACHE_PATH",
+    str(DB_DIR / "chrome_cdp_endpoint.txt"),
+)
+
 # ── CDP Proxy (legacy; kept for older collectors transitioning to Playwright) ──
 CDP_PROXY_URL = os.environ.get(
     "CDP_PROXY_URL",

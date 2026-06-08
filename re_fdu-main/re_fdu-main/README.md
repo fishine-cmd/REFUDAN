@@ -1,171 +1,283 @@
 # RE:FUDAN（复见）
 
-> **让经验先抵达，答案再相见。**
->
-> 一个面向复旦校园的 Agent-Native 社交演示系统：通过 SecondMe 数字分身，让授权学长学姐的经验先与学弟妹完成一轮 A2A（Agent-to-Agent）前哨对话，再决定是否真人引荐。
+> 让经验先抵达，答案再相见。
 
-**演示分支**：`feat/secondme-integration`
+RE:FUDAN 是一个面向复旦校园场景的 Agent-Native 社交 Demo。系统围绕“学弟 Agent 提问 - 学长 Agent 预沟通 - 真人决定是否接力”展开，把高摩擦的经验咨询，重构成可追踪、可解释、可分阶段推进的协作流程。
 
----
+当前仓库已经进入可运行工作版，核心链路不再是静态展示：
 
-## 📍 评审快速通道
+- 学弟侧可以构建 Agent 档案、选择问题方向、获得推荐学长
+- 需求匹配页支持发出首条消息后自动触发 A2A 多轮预沟通
+- 学长侧可以在接力收件台查看结果，并决定是否 handoff
+- P3 保留完整自动对话轨迹，P4 负责连接简报与人工接力
 
-| 我要看 | 去哪 |
-|---|---|
-| 项目说明 / 系统设计 / 后续计划 | [`doc/01_项目说明书.md`](doc/01_项目说明书.md) |
-| Demo 演示视频（含场景脚本） | `doc/02_demo_video.mp4` + [`doc/03_demo视频说明.md`](doc/03_demo视频说明.md) |
-| 怎么把项目跑起来 | [`doc/05_代码运行说明.md`](doc/05_代码运行说明.md) |
-| SecondMe API 接入技术设计 | [`doc/secondme-integration-design.md`](doc/secondme-integration-design.md) |
-| 未来扩展 / 接手开发备忘 | [`doc/HANDOFF.md`](doc/HANDOFF.md) |
+## 当前项目状态
 
-> **注意目录结构**：本仓库由上游 zip 解压生成，实际代码在双层嵌套 `re_fdu-main/re_fdu-main/` 内。本 README 位于真正的项目根，所有相对路径以此为准。从 GitHub 浏览时直接进入这一层即可。
+- 主应用：`apps/site`
+- 共享合同：`packages/contracts`
+- 画像抽取流水线：`services/profile-extraction`
+- 技术主线：`Next.js 15 + React 19 + Bun + Upstash Redis + DeepSeek + Python`
 
----
+当前版本定位为 Agent 训练营中期可演示工作版，不是生产环境成品。
 
-## 🚀 三分钟跑起来
+## 快速导航
 
-> **Windows 用户偷懒**：项目根有 `启动.bat`，双击即可完成下面所有步骤（Bun 自动装、依赖检查、Python 检查、Edge CDP 启动、双前端起飞）。命令行流程在下方供其他平台参考。
+| 你想看什么 | 路径 |
+| --- | --- |
+| 项目说明书 | `doc/01_项目说明书.md` |
+| Demo 视频说明 | `doc/03_demo视频说明.md` |
+| 代码运行说明 | `doc/05_代码运行说明.md` |
+| 主站代码 | `apps/site` |
+| Python 画像流水线 | `services/profile-extraction` |
 
-### 环境
+## 当前系统结构
 
-| 组件 | 最低版本 | 备注 |
-|---|---|---|
-| Bun | 1.3 | 前端 |
-| Node.js | 20 | |
-| Git | 2.30 | |
-| **Python** | **3.12** | **社媒画像提取，可选；启动.bat 会检测并装依赖** |
-| **Edge** | 当前版 | **XHS/知乎/LinkedIn 提取需要,GitHub REST 不需要** |
+### `apps/site`
 
-### 步骤
+主站承担所有用户交互和业务 API，包括：
+
+- 首页、注册、登录
+- Agent 工作台
+- 学弟推荐页 `/me/junior`
+- 学长接力收件台 `/me/senior`
+- A2A 会话中心 `/a2a/[sessionId]`
+- P4 连接简报页 `/a2a/[sessionId]/referral`
+
+### `packages/contracts`
+
+用于维护前后端共享类型，当前已覆盖：
+
+- A2A turn / trace
+- autoplay state
+- assessment / verdict / covered slots
+- handoff / referral 状态
+
+### `services/profile-extraction`
+
+这是画像抽取与分析流水线，由主站通过子进程触发，不是独立 Web 服务。主要职责：
+
+- 收集 GitHub / 小红书 / 知乎 / LinkedIn 资料
+- 运行分析与综合
+- 产出结构化 `builtProfile`
+- 为推荐和 A2A 提供输入
+
+## 当前最重要的功能更新
+
+### 1. 需求匹配页触发 A2A 自动多轮对话
+
+当前不再要求用户必须先跳转到 `/a2a/new` 才能开始预沟通。
+
+在 `/me/junior` 的推荐卡片中：
+
+- 用户先输入第一句方向性问题
+- 系统创建 A2A session，并立即生成首轮回复
+- 随后前端循环调用 autoplay API
+- 由编排器围绕 5 个信息槽继续追问
+- 达到停止条件后输出总结、结论标签、回流评分
+
+5 个核心信息槽包括：
+
+- 入营 / 整体难度
+- 真题 / 问题类型
+- 导师或沟通风格
+- 信任升级后才适合透露的信息
+- GPA / 硬门槛
+
+### 2. A2A 会话支持自动编排与总结回流
+
+后端现在不再只是“用户问一句，学长答一句”。
+
+系统已经支持：
+
+- 自动选择下一轮 probing slot
+- 自动生成 junior_agent 追问
+- 调用 senior_agent 回复
+- 评估已覆盖槽位
+- 生成 `summary / verdict / adjustedScore / insights`
+- 把 assessment 回流到推荐卡片
+
+### 3. 旧 `agent-workbench` 路径已兼容接入 autoplay
+
+由于部分演示路径仍会从 `/agent-workbench` 发消息，当前这个旧入口也已经补上：
+
+- 首条消息后自动创建带 `autoplay: true` 的 session
+- 前端按轮推进 autoplay
+- 页面内展示运行状态
+- 会话结束后可直接进入完整 A2A 轨迹
+
+### 4. Provider 失败时会自动降级
+
+如果 DeepSeek 当前不可用，系统不会直接中断，而是：
+
+- 记录 fallback trace
+- 生成基于本地 persona / evidence 的保底回复
+- 保留会话与已有结果
+
+这意味着“对话质量可能下降”，但演示链路尽量不断。
+
+## 核心外部依赖
+
+### Upstash Redis
+
+用于持久化：
+
+- 用户信息
+- 登录 session
+- 学长 / 学弟索引
+- 推荐缓存
+- A2A session metadata
+- turn / trace / assessment / handoff / referral
+
+关键环境变量：
+
+```env
+UPSTASH_REDIS_REST_URL=
+UPSTASH_REDIS_REST_TOKEN=
+```
+
+### DeepSeek API
+
+当前用于：
+
+- 学长 Agent 回复生成
+- 自动追问链路中的 senior-side 回复
+- 会话摘要和 handoff brief 所依赖的内容生成
+
+关键环境变量：
+
+```env
+DEEPSEEK_API_KEY=
+DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
+```
+
+### Python 画像流水线
+
+当前用于：
+
+- 采集社媒资料
+- 生成结构化档案
+- 支撑推荐与 A2A 上下文
+
+## 本地运行
+
+### 环境要求
+
+| 组件 | 建议版本 | 作用 |
+| --- | --- | --- |
+| Bun | `>=1.3` | 包管理与脚本执行 |
+| Node.js | `>=20` | Next.js runtime |
+| Python | `3.11` 或 `3.12` | 画像流水线 |
+| Git | 较新版本 | 拉取仓库 |
+
+### 1. 获取代码
 
 ```bash
-# 1. clone（如果还没拉）
 git clone https://github.com/fishine-cmd/REFUDAN.git
 cd REFUDAN/re_fdu-main/re_fdu-main
+```
 
-# 2. 装依赖
+### 2. 安装依赖
+
+```bash
 bun install
+```
 
-# 3. 配 .env.local（最少配 DeepSeek API key 即可）
+### 3. 配置环境变量
+
+```bash
 cp apps/site/.env.example apps/site/.env.local
-# 编辑该文件,设置 DEEPSEEK_API_KEY=sk-xxx
-# 可选: GITHUB_TOKEN=ghp_xxx 提升 GitHub API 速率到 5000/h
+```
 
-# 4. 启动主演示
+至少补齐：
+
+```env
+UPSTASH_REDIS_REST_URL=
+UPSTASH_REDIS_REST_TOKEN=
+DEEPSEEK_API_KEY=
+```
+
+### 4. 安装 Python 依赖
+
+```bash
+cd services/profile-extraction
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+cd ../..
+```
+
+### 5. 初始化 demo 学长数据
+
+```bash
+cd apps/site
+bun run seed
+```
+
+默认 demo 学长密码统一为：
+
+```text
+demo123
+```
+
+### 6. 启动主站
+
+```bash
 cd apps/site
 bun run dev
-# 浏览器打开 http://localhost:3000
 ```
 
-首次访问会自动创建 `apps/site/data/users.db` 并 seed 6 个 demo 学长账号。
+访问：
 
-### Demo 账号
+- [http://localhost:3000](http://localhost:3000)
 
-6 个学长账号统一密码 `demo123`：
+### 7. 类型检查
 
-| 用户名 | 显示名 |
-|---|---|
-| chensirui | 陈思睿 |
-| chenxiaoyuan | 陈晓远 |
-| sunyifan | 孙逸凡 |
-| weixuejie | 魏雪洁 |
-| wuzihan | 吴子涵 |
-| zhangmingyuan | 张明远 |
-
-学弟身份请走 `/signup` 自助注册（开放注册，选"学弟"角色）。
-
-> 重置 DB：删除 `apps/site/data/users.db` 后下次 dev 启动自动重新 seed。
-
-### 演示路径
-
-```
-http://localhost:3000               落地页（含登录/注册入口）
-http://localhost:3000/login         登录
-http://localhost:3000/signup        注册（选学长/学弟）
-http://localhost:3000/mentors       学弟浏览推荐学长（雷达图）
-http://localhost:3000/agent-workbench 个人画像提取 + 与"我的 Agent"或学长对话
+```bash
+bun run typecheck:site
+bun run typecheck:contracts
 ```
 
-完整运行 / 排错指南：[`doc/05_代码运行说明.md`](doc/05_代码运行说明.md)
+## 推荐演示路径
 
-### 社媒画像提取（XHS 首次登录）
+### 学弟侧
 
-GitHub 走公开 REST 不需要登录；XHS（小红书）大部分内容必须登录才能看到。**一次性**操作：
+1. 注册学弟账号
+2. 进入 `Agent 工作台`
+3. 构建 Agent 档案
+4. 进入 `/me/junior`
+5. 选择问题方向并输入第一句问题
+6. 在推荐卡片内启动 A2A 自动多轮预沟通
+7. 查看自动总结与匹配结论
+8. 进入 `/a2a/[sessionId]` 查看完整轨迹
 
-1. 项目跑起来后，双击 `services/profile-extraction/xhs_login.bat`
-2. 自动弹出 Chromium 窗口，打开小红书
-3. 在窗口里**扫码或输入账号密码登录**
-4. 完成后回到 cmd 窗口按 **Enter**
-5. cookie 自动持久化到 `services/profile-extraction/data/browser_profile/`
+### 学长侧
 
-之后用 `/agent-workbench` 填 XHS ID 时，Python 管线自动用 headless Chromium 复用这套登录态。Cookie 过期时前端会清楚提示重跑 `xhs_login.bat`。
+1. 使用 seed 后的 demo 学长账号登录
+2. 进入 `/me/senior`
+3. 查看接力收件台中的 A2A 会话
+4. 进入 P3 会话中心查看轨迹与 assessment
+5. 决定是否 handoff
+6. 若通过则进入 P4 连接简报页
 
-GitHub 用户名可选：`apps/site/.env.local` 加一行 `GITHUB_TOKEN=ghp_...` 把匿名速率 60/h 升到 5000/h（去 https://github.com/settings/tokens 生成，全部 scope 不勾即可）。
+## 当前仓库中最重要的目录
 
----
-
-## 🧩 项目结构
-
-```
-re_fdu-main/re_fdu-main/                ← 真正的项目根（README 所在地）
-├── apps/
-│   ├── site/                           ← 主演示应用（端口 3000）
-│   │   ├── src/
-│   │   │   ├── app/
-│   │   │   │   ├── page.tsx                       落地页
-│   │   │   │   ├── mentors/page.tsx               学弟妹浏览
-│   │   │   │   ├── mentor-onboard/page.tsx        学长授权管理
-│   │   │   │   ├── agent-workbench/page.tsx       A2A 对话工作台
-│   │   │   │   └── api/
-│   │   │   │       ├── chat/route.ts              SecondMe / 兜底智能分发
-│   │   │   │       ├── mentors/route.ts           mentor 列表
-│   │   │   │       └── auth/secondme/             OAuth2 四路由
-│   │   │   ├── lib/secondme.ts                    SecondMe 客户端
-│   │   │   └── data/mentors/                      6 份学长 JSON（含 consent 字段）
-│   │   ├── .env.example                           环境变量模板
-│   │   └── .env.local                             本地配置（gitignore）
-│   └── app/                            ← 架构示意（次要）
-├── packages/contracts/                 ← 共享 TS 类型 + YAML 接口
-├── doc/                                ← 所有文档（提交材料 + 设计稿）
-└── scripts/
-    └── package-submission.mjs          ← 一键打包中期材料 ZIP
+```text
+re_fdu-main/re_fdu-main
+├─ apps
+│  └─ site
+│     ├─ src/app
+│     ├─ src/lib
+│     ├─ src/data/mentors
+│     └─ scripts/seed-redis.ts
+├─ packages/contracts
+├─ services/profile-extraction
+└─ doc
 ```
 
----
+## 当前仍需注意的事项
 
-## 🏛️ 技术栈
-
-- **运行时**：Bun 1.3 + Node.js 20+
-- **前端**：Next.js 15 (App Router) + React 19 + Tailwind CSS 3
-- **类型**：TypeScript 5.8 (strict)
-- **AI 后端**：SecondMe API（主，OAuth2 + SSE 流式） + DeepSeek（兜底）
-- **认证**：OAuth2 Authorization Code Flow + CSRF state 校验
-- **本地存储**：mentor JSON（静态）+ mentor_tokens.json（OAuth2 token，gitignore）
-
----
-
-## 🔐 数据合规（项目灵魂）
-
-| 原则 | 实现 |
-|---|---|
-| 本人授权 | 6 位学长学姐已书面授权，`consent_status: granted` |
-| 数据最小化 | OAuth2 仅申请 `userinfo` + `chat.write` + `memory.read` 三个 scope |
-| 可撤回 | `/api/auth/secondme/revoke` + UI 一键撤销 |
-| 输出标识 | `/agent-workbench` 顶部合规水印：「AI 助手代为表达，非本人直接发言」 |
-| 来源透明 | 演示绑定项目方账号的 mentor 卡片有橙色提示框，明确标识 |
-
-详见 [`doc/01_项目说明书.md` 第 5 章](doc/01_项目说明书.md)。
-
----
-
-## 📞 联系
-
-- 项目仓库：https://github.com/fishine-cmd/REFUDAN
-- 原始仓库：https://github.com/Wesleyyyyyy/REFUDAN
-- 中期评审材料邮箱：`FudanAICS@163.com`
-
----
-
-## 📜 License
-
-MIT，见 [`LICENSE`](LICENSE)。
+- 当前 README 已按现有代码更新，但仓库中仍可能残留早期设计文档，请不要直接把旧设计当成当前运行说明
+- `services/profile-extraction/data/browser_profile/` 可能包含本地浏览器登录态，提交材料前不要打包这类私有目录
+- 如果 Redis 未配置，主站大部分核心能力都无法运行
+- 如果 DeepSeek 当前不可用，A2A 会降级为 fallback reply，链路可能继续，但质量会下降
+- 如果 Python 依赖未安装，“生成 Agent 档案”会失败，但登录、推荐、A2A 主链路仍可单独演示

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { productPrinciple, surfaceNames } from "@/lib/product-language";
 
 export default function LoginPage() {
   const [username, setUsername] = useState("");
@@ -36,9 +37,10 @@ export default function LoginPage() {
     <main className="auth-shell">
       <section className="auth-panel auth-panel--copy">
         <p className="landing-eyebrow">Sign in</p>
-        <h1>回到你的工作台。</h1>
+        <h1>回到你的 Agent 工作流。</h1>
         <p className="auth-copy">
-          登录后你会回到自己的 persona 工作区、推荐首页或收件箱。整个系统围绕“AI 先抵达，人后进入”来组织体验。
+          登录后你会回到自己的 {surfaceNames.workspace}、{surfaceNames.recommendationHub} 或{" "}
+          {surfaceNames.inbox}。整个系统围绕“{productPrinciple}”来组织体验。
         </p>
         <div className="auth-note">
           <span>Demo note</span>
@@ -48,7 +50,7 @@ export default function LoginPage() {
 
       <section className="auth-panel auth-panel--form">
         <div className="auth-panel__head">
-          <p className="landing-eyebrow">Account access</p>
+          <p className="landing-eyebrow">账号访问</p>
           <h2>登录 RE:FUDAN</h2>
         </div>
 
