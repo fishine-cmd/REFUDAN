@@ -419,7 +419,6 @@ re_fdu-main/re_fdu-main
 
 ## 当前仍需注意的事项
 
-- 本 README 已按现有代码更新，但仓库中仍可能残留早期设计文档，请不要直接把旧设计当成当前运行说明
 - `services/profile-extraction/data/browser_profile/`、`chrome_cdp_endpoint.txt` 可能包含本地浏览器登录态与 CDP 端点，提交材料前不要打包这类私有内容
 - 如果 Redis 未配置，主站大部分核心能力都无法运行
 - 如果 DeepSeek 当前不可用，A2A 会降级为 fallback reply，链路可能继续，但质量会下降
