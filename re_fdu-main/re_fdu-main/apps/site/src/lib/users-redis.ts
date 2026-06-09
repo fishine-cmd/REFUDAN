@@ -256,6 +256,7 @@ export async function getBuiltProfile(userId: string): Promise<unknown | null> {
   const r = getRedis();
   const v = await r.hget<string>(K.profile(userId), "built_profile_json");
   if (!v) return null;
+  if (typeof v === "object") return v;
   try {
     return JSON.parse(v);
   } catch {

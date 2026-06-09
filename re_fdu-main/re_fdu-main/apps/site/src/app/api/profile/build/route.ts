@@ -61,18 +61,44 @@ export async function POST(request: Request) {
     );
   }
 
-  // Persist to current user's row if logged in (non-blocking on failure).
+  let persistStatus: {
+    attempted: boolean;
+    persisted: boolean;
+    error?: string;
+  } = {
+    attempted: false,
+    persisted: false,
+  };
+
+  // Persist to current user's row if logged in. Failures are surfaced so the
+  // frontend can warn that the generated profile may not survive reloads.
   try {
     const u = await getCurrentUser();
     if (u) {
+      persistStatus = { attempted: true, persisted: false };
       const profile = (result.data as { profile?: unknown }).profile;
       if (profile) {
         await updateUserBuiltProfile(u.pub.id, profile);
+        persistStatus = { attempted: true, persisted: true };
       }
+    } else {
+      persistStatus = {
+        attempted: true,
+        persisted: false,
+        error: "当前登录状态已失效，无法保存到云端数据库。",
+      };
     }
   } catch (e) {
     console.error("[profile/build] failed to persist to user row:", e);
+    persistStatus = {
+      attempted: true,
+      persisted: false,
+      error: e instanceof Error ? e.message : String(e),
+    };
   }
 
-  return NextResponse.json(result.data);
+  return NextResponse.json({
+    ...(result.data as Record<string, unknown>),
+    persistStatus,
+  });
 }

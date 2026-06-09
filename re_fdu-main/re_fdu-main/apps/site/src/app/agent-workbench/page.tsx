@@ -102,6 +102,16 @@ type ProfileStatCard = {
   value: string;
 };
 
+type ProfileBuildResponse = {
+  profile?: Record<string, unknown>;
+  error?: string;
+  persistStatus?: {
+    attempted: boolean;
+    persisted: boolean;
+    error?: string;
+  };
+};
+
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -717,9 +727,16 @@ function AgentWorkbenchInner() {
               goal: goal.trim() || undefined,
             }),
           });
-          const data = await res.json();
+          const data = (await res.json()) as ProfileBuildResponse;
           if (res.ok && data.profile) {
             setBuiltProfile(data.profile);
+            if (data.persistStatus?.attempted && !data.persistStatus.persisted) {
+              buildWarnings.push(
+                data.persistStatus.error
+                  ? `社交画像已生成，但保存到云端失败：${data.persistStatus.error}`
+                  : "社交画像已生成，但未成功保存到云端数据库；刷新或重新进入页面后可能仍显示“未生成”。",
+              );
+            }
           } else {
             buildWarnings.push(data.error ?? `社交画像生成失败 (HTTP ${res.status})`);
           }
