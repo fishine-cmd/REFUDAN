@@ -22,11 +22,11 @@ export interface AgentSnapshotSource {
   title?: string | null;
   highlight?: string | null;
   avatar?: string | null;
-  tagsJson?: string | null;
-  personaJson?: string | null;
-  detailedProfileJson?: string | null;
-  builtProfileJson?: string | null;
-  agentProfileJson?: string | null;
+  tagsJson?: string | unknown | null;
+  personaJson?: string | unknown | null;
+  detailedProfileJson?: string | unknown | null;
+  builtProfileJson?: string | unknown | null;
+  agentProfileJson?: string | unknown | null;
 }
 
 export interface AgentSnapshot {
@@ -58,8 +58,12 @@ function asJsonRecord(value: unknown): JsonRecord {
     : {};
 }
 
-function parseJsonRecord(value: string | null | undefined): JsonRecord {
+function parseJsonRecord(value: unknown): JsonRecord {
   if (!value) return {};
+  if (typeof value === "object" && !Array.isArray(value)) {
+    return value as JsonRecord;
+  }
+  if (typeof value !== "string") return {};
   try {
     const parsed = JSON.parse(value);
     return parsed && typeof parsed === "object" ? (parsed as JsonRecord) : {};
@@ -80,8 +84,10 @@ function parseStringArray(value: unknown, limit = 12): string[] {
   return unique(cleaned).slice(0, limit);
 }
 
-function parseTagsJson(value: string | null | undefined): string[] {
+function parseTagsJson(value: unknown): string[] {
   if (!value) return [];
+  if (Array.isArray(value)) return parseStringArray(value, 8);
+  if (typeof value !== "string") return [];
   try {
     const parsed = JSON.parse(value);
     return parseStringArray(parsed, 8);
@@ -160,8 +166,12 @@ function pickAvatar(
   return null;
 }
 
-export function parseStoredAgentProfile(value: string | null | undefined): StoredAgentProfile | null {
+export function parseStoredAgentProfile(value: unknown): StoredAgentProfile | null {
   if (!value) return null;
+  if (typeof value === "object" && !Array.isArray(value)) {
+    return value as StoredAgentProfile;
+  }
+  if (typeof value !== "string") return null;
   try {
     const parsed = JSON.parse(value);
     if (!parsed || typeof parsed !== "object") return null;
